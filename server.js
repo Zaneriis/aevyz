@@ -440,6 +440,9 @@ function statsPlayer(id) {
   return {
     snaps: db.prepare(`SELECT at, ${SNAP_KEYS.join(', ')} FROM snaps WHERE player = ? ORDER BY at`).all(id),
     rarity: db.prepare('SELECT at, counts FROM rar_snaps WHERE player = ? ORDER BY at').all(id).map(r => ({ at: r.at, counts: JSON.parse(r.counts) })),
+    // ponytail: cartes connues du catalogue local, retirées du jeu comprises ; filtrer si le site en retire beaucoup.
+    rarityTotals: db.prepare('SELECT rarity, COUNT(*) AS n FROM cards WHERE rarity IS NOT NULL GROUP BY rarity').all()
+      .reduce((t, r) => { t[r.rarity] = r.n; return t; }, [0, 0, 0, 0, 0, 0, 0]),
   };
 }
 // Licences les plus enviées : joueurs qui veulent au moins une carte de la licence, puis cartes voulues.

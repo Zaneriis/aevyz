@@ -428,6 +428,7 @@ const start = async () => {
   const luiStats = await (await api('/api/stats/player?id=lui')).json();
   assert.deepStrictEqual(luiStats.rarity.map(r => r.counts), [[2, 0, 2, 1, 0, 0, 0]], 'cartes uniques par rareté, carte inconnue ignorée');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
+  assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes du catalogue par rareté, alternatives comprises');
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [
     { licence: 'Alpha', players: 1, cards: 4, size: 5 }, { licence: 'Gamma', players: 1, cards: 1, size: 3 }] }, 'licences enviées, sans mes envies');
   assert.strictEqual(st.find(x => x.id === 'lui').active_at, null, 'pas encore de mouvement');

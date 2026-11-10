@@ -273,6 +273,13 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .envy .bar{display:flex;align-items:center;gap:8px}
 .envy .bar i{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);min-width:2px}
 @media(max-width:940px){.stats{grid-template-columns:minmax(0,1fr)}}
+.rprog{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.rprog>div{padding:8px 10px;border-radius:12px;background:var(--glass);border-left:3px solid var(--rc);display:grid;gap:3px}
+.rprog b{font:400 1.15rem var(--title);font-variant-numeric:tabular-nums}
+.rprog>div>i{display:block;height:6px;border-radius:3px;background:#ffffff14;overflow:hidden}
+.rprog>div>i>i{display:block;height:100%;background:var(--rc)}
+.rprog small{color:var(--muted);font-size:.78rem}
+.rprog small.done{color:#7be08f;font-weight:800}
 /* Marché */
 .mkt{grid-template-columns:minmax(0,1fr) minmax(0,380px)}
 .mkdelays{display:grid;gap:5px}
@@ -1376,6 +1383,21 @@ async function loadStats() {
     loadStatsPlayer();
   } catch (e) { $('stBody').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
 }
+// Progression par rareté : cartes uniques possédées / cartes de cette rareté, d'après le dernier relevé.
+function rarityProgress(d) {
+  const last = d.rarity.at(-1);
+  if (!last) return el('span');
+  return el('article', {className: 'glass chartbox'}, el('div', {className: 'xhead'}, el('h3', {textContent: 'Progression par rareté'}),
+    el('small', {className: 'xnote', style: 'margin:0', textContent: 'relevé du ' + time(last.at)})),
+    el('div', {className: 'rprog'}, ...RARITIES.map((name, i) => {
+      const have = last.counts[i] || 0, total = d.rarityTotals[i] || 0, missing = Math.max(0, total - have), pct = total ? Math.min(100, have / total * 100) : 0;
+      return el('div', {style: `--rc:${RCOL[i]}`},
+        el('span', {className: 'rar', textContent: name}),
+        el('b', {textContent: `${have.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}`}),
+        el('i', {}, el('i', {style: `width:${pct}%`})),
+        el('small', {className: missing ? '' : 'done', textContent: total ? missing ? `${Math.round(pct)} % · il en manque ${missing.toLocaleString('fr-FR')}` : 'complet ✓' : '–'}));
+    })));
+}
 async function loadStatsPlayer() {
   const p = (statsRows || []).find(x => x.id === statsSel);
   if (!p) return $('stBody').replaceChildren(el('p', {className: 'xnote', textContent: 'Aucune donnée pour l\'instant : le premier relevé arrive quelques secondes après le démarrage.'}));
@@ -1389,6 +1411,7 @@ async function loadStatsPlayer() {
       el('span', {className: 'xnote', style: 'margin:0', textContent: p.active_at ? `Dernière activité : ${time(p.active_at)} (il y a ${ago(Date.now() - p.active_at)})` : 'Aucune activité vue depuis le début du suivi'})),
     el('div', {className: 'tiles'}, stat('Cartes', n(p.total)), stat('Uniques', n(p.uniq)), stat('Boosters', n(p.opened)), stat('Mythiques', n(p.mythics)),
       stat('Classement uniques', p.pos_uniq ? '#' + p.pos_uniq : '–'), stat('Total', p.pos_total ? '#' + p.pos_total : '–'), stat('Boosters', p.pos_opened ? '#' + p.pos_opened : '–'), stat('Mythiques', p.pos_myth ? '#' + p.pos_myth : '–')),
+    rarityProgress(d),
     chartCard('col', 'Collection', [
       {key: 'total', label: 'Cartes totales', points: col('total')}, {key: 'uniq', label: 'Uniques', points: col('uniq')},
       {key: 'opened', label: 'Boosters', points: col('opened')}, {key: 'mythics', label: 'Mythiques', points: col('mythics')}]),
