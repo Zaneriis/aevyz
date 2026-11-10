@@ -87,6 +87,14 @@ const fake = http.createServer((req, res) => {
       if (game.recycleRefusal) return json({ message: game.recycleRefusal }, 400);
       return json({ cards: a.p_n, coins: a.p_n * 2, left: 1, total: 0 });
     }
+    if (p === '/rest/v1/rpc/market_list') return json(game.listings || []);
+    if (p === '/rest/v1/rpc/market_buy') {
+      const { p_id } = JSON.parse(body), l = (game.listings || []).find(x => x.id === p_id);
+      (game.bought ||= []).push(p_id);
+      game.profile.coins -= l.price;
+      game.listings = game.listings.filter(x => x !== l);
+      return json({ coins: game.profile.coins, card: l.card });
+    }
     if (p.startsWith('/rest/v1/rpc/trade_')) { game.tradeWrites = (game.tradeWrites || 0) + 1; return json({}); }
     if (p === '/rest/v1/rpc/open_booster') {
       const a = JSON.parse(body);
@@ -113,7 +121,7 @@ const until = async (fn, what) => {
   assert.fail('Délai dépassé : ' + what);
 };
 const settled = async () => { await sleep(100); await until(async () => !(await state()).running, 'fin du passage'); };
-const env = { ...process.env, PASSWORD: PASS, PORT: String(APP), DATA_DIR: dir, AEVYZ_ORIGIN: `http://127.0.0.1:${FAKE}`, OPEN_DELAY_MS: '0', INTERVAL_MIN: '60', STATS_READS: '0' };
+const env = { ...process.env, PASSWORD: PASS, PORT: String(APP), DATA_DIR: dir, AEVYZ_ORIGIN: `http://127.0.0.1:${FAKE}`, OPEN_DELAY_MS: '0', INTERVAL_MIN: '60', STATS_READS: '0', DELAY_UNIT_MS: '100' };
 let app;
 const start = async () => {
   app = spawn(process.execPath, [path.join(__dirname, 'server.js')], { env, stdio: ['ignore', 'ignore', 'inherit'] });
@@ -476,6 +484,54 @@ const start = async () => {
   assert.strictEqual(back.count, 1, "ouvert pendant l'absence");
   assert.ok(back.previous < Date.now());
   assert.strictEqual((await seen()).count, 0, 'rechargement : plus rien de nouveau');
+
+  // Marché : seules les annonces fixes, pas à moi, sous le prix max et dans la cible ; achat après le délai, quantité respectée.
+  game.listings = [
+    { id: 1, card: 'c2', kind: 'fixe', price: 40, mine: false, status: 'active' }, // Doom légendaire : oui
+    { id: 2, card: 'c1', kind: 'fixe', price: 30, mine: false, status: 'active' }, // Doom commune : oui, la moins chère d'abord
+    { id: 3, card: 'c2', kind: 'fixe', price: 99, mine: false, status: 'active' }, // trop cher
+    { id: 4, card: 'c1', kind: 'enchere', price: 1, mine: false, status: 'active' }, // enchère
+    { id: 5, card: 'c1', kind: 'fixe', price: 1, mine: true, status: 'active' }, // la mienne
+    { id: 6, card: 'c3', kind: 'fixe', price: 1, mine: false, status: 'active' }, // autre licence
+  ];
+  const routine = { kind: 'licence', value: 'Doom', max: 50, left: 2, delays: [{ min: 0, max: 1, pct: 40 }, { min: 1, max: 2, pct: 60 }] };
+  assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, delays: [{ min: 5, max: 1, pct: 10 }] }] })).status, 400, 'tranche min > max refusée');
+  assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, max: 0 }] })).status, 400, 'prix max nul refusé');
+  assert.strictEqual((await post('/api/routines', { routines: [routine] })).status, 200);
+  await until(async () => (game.bought || []).length >= 2, 'achats des routines');
+  await sleep(200);
+  assert.deepStrictEqual(game.bought.sort(), [1, 2], 'seulement les annonces correspondantes, deux au plus');
+  let m = await (await api('/api/market')).json();
+  assert.strictEqual(m.routines[0].left, 0, 'quantité épuisée');
+  assert.strictEqual(m.bought.length, 2);
+  game.listings.push({ id: 7, card: 'c1', kind: 'fixe', price: 10, mine: false, status: 'active' });
+  await post('/api/routines', { routines: m.routines });
+  await sleep(300);
+  assert.strictEqual(game.bought.length, 2, 'routine épuisée : plus rien');
+  // Annonce disparue entre le scan et l'achat : rien n'est acheté.
+  await post('/api/routines', { routines: [{ ...routine, left: 1, delays: [{ min: 3, max: 3, pct: 1 }] }] });
+  await sleep(100);
+  assert.ok((await (await api('/api/market')).json()).listings.some(l => l.planned), 'achat prévu');
+  game.listings = [];
+  await sleep(500);
+  assert.strictEqual(game.bought.length, 2, 'annonce partie : achat annulé');
+  // Pause du marché, indépendante de celle des boosters : ni scan ni achat.
+  assert.strictEqual((await post('/api/market/quiet', { on: true, from: hhmm(-3600e3), to: hhmm(3600e3) })).status, 200);
+  assert.strictEqual((await state()).quiet.on, false, 'pause des boosters inchangée');
+  game.listings = [{ id: 8, card: 'c1', kind: 'fixe', price: 10, mine: false, status: 'active' }];
+  await post('/api/routines', { routines: [{ ...routine, left: 1 }] });
+  await sleep(500);
+  m = await (await api('/api/market')).json();
+  assert.ok(m.quietNow && !m.listings.some(l => l.planned) && game.bought.length === 2, 'marché en pause : rien de prévu ni acheté');
+  // Modifier une routine garde son identifiant ; la fin de la pause relance le scan.
+  const id = m.routines[0].id;
+  await post('/api/market/quiet', { on: false, from: '23:00', to: '07:00' });
+  await post('/api/routines', { routines: [{ ...m.routines[0], max: 5 }] });
+  await sleep(500);
+  m = await (await api('/api/market')).json();
+  assert.strictEqual(m.routines[0].id, id, 'même routine après modification');
+  assert.strictEqual(game.bought.length, 2, 'prix max abaissé : plus de correspondance');
+  await post('/api/routines', { routines: [] });
 
   // Un mauvais collage garde la session en place.
   assert.strictEqual((await post('/api/session', { session: '{"refresh_token":"mort"}' })).status, 400);
