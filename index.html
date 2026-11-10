@@ -1,0 +1,1425 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Surcouche Aevyz</title>
+<link rel="icon" href="https://www.aevyz.com/kit/brand/logo-full-s.webp">
+<style>
+@font-face{font-family:"Lilita One";src:url(https://www.aevyz.com/kit/fonts/lilita-one.woff2) format("woff2");font-display:swap}
+@font-face{font-family:"Nunito";src:url(https://www.aevyz.com/kit/fonts/nunito-600.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Nunito";src:url(https://www.aevyz.com/kit/fonts/nunito-800.woff2) format("woff2");font-weight:800;font-display:swap}
+:root{--bg:#0B0C14;--glass:#ffffff0d;--glass2:#ffffff17;--line:#ffffff1f;--text:#F4F2EC;--muted:#A5A9BC;--accent:#FFC83D;--danger:#F0566B;
+  --r0:#A3A7B4;--r1:#5BC46A;--r2:#4A9BE8;--r3:#A87BEA;--r4:#FFC83D;--r5:#F0566B;--r6:#B49BFF;
+  --title:"Lilita One",system-ui,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--text);font:600 16px/1.45 Nunito,system-ui,sans-serif;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:
+  radial-gradient(60vw 45vw at 12% -5%,#5b3fd655,transparent 70%),
+  radial-gradient(50vw 40vw at 95% 10%,#e0457a33,transparent 70%),
+  radial-gradient(70vw 50vw at 60% 110%,#1f8fb733,transparent 70%)}
+main{max-width:1320px;margin:auto;padding:22px 16px 70px}
+h1,h2,h3{font-family:var(--title);font-weight:400;letter-spacing:.3px;margin:0}
+h1{font-size:clamp(1.6rem,4vw,2.2rem);background:linear-gradient(95deg,#fff 20%,var(--accent) 60%,#ff7ab0);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{font-size:1.35rem;margin-bottom:14px}
+section{margin-top:34px}
+a{color:var(--accent)}
+code{background:#0007;padding:2px 6px;border-radius:6px;font-size:.85em;overflow-wrap:anywhere}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font:inherit;cursor:pointer;color:inherit;background:none;border:0}
+.btn{background:var(--accent);color:#14151B;border-radius:10px;padding:9px 18px;font-weight:800}
+.ghost{border:1px solid var(--line);border-radius:10px;padding:7px 14px;color:var(--muted)}
+.ghost:hover{color:var(--text);background:var(--glass)}
+.glass{background:var(--glass);border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(10px)}
+
+/* En-tête */
+.top{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between}
+.hud{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.stat{padding:7px 13px;border-radius:13px;background:var(--glass);border:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;min-width:0}
+.stat small{font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+.stat b{font:400 1.1rem var(--title);font-variant-numeric:tabular-nums}
+.pips{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;max-width:150px}
+.pips i{width:9px;height:9px;border-radius:3px;background:#ffffff1c}
+.pips i.on{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.bell{position:relative;background:linear-gradient(120deg,#ff5f93,#ffb14a);color:#1b0d14;font-weight:800;border-radius:13px;padding:0 16px;min-height:44px;animation:bell 2.4s ease-in-out infinite}
+@keyframes bell{50%{box-shadow:0 0 22px #ff6f9d99}}
+.alert{margin-top:16px;padding:12px 16px;border:1px solid var(--danger);border-radius:14px;background:#F0566B26}
+
+/* Connexion */
+#connect{padding:18px;margin-top:22px}
+ol{padding-left:20px;margin:0 0 12px}li{margin-bottom:6px}
+textarea{width:100%;height:80px;background:#0006;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px;font:inherit;margin-bottom:8px}
+
+/* Boosters */
+.packs-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.packs-head h2{margin:0}
+.modes{display:inline-flex;padding:3px;border-radius:999px;background:var(--glass);border:1px solid var(--line);font-size:.8rem;color:var(--muted)}
+.modes label{padding:3px 12px;border-radius:999px;cursor:pointer}
+.modes label:has(input:checked){background:var(--glass2);color:var(--text);font-weight:800}
+.modes label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:1px}
+.modes input{position:absolute;opacity:0;width:1px;height:1px}
+.packs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.pack{--c:var(--accent);position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:14px 10px 12px;cursor:pointer;overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s}
+.pack:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--c) 60%,transparent)}
+.pack::before{content:"";position:absolute;inset:auto 0 0;height:60%;background:radial-gradient(70% 90% at 50% 100%,color-mix(in srgb,var(--c) 34%,transparent),transparent);opacity:.45;transition:opacity .25s;pointer-events:none}
+.pack img{position:relative;height:124px;width:auto;max-width:100%;object-fit:contain;filter:saturate(.75) brightness(.8) drop-shadow(0 8px 12px #0009);transition:filter .25s}
+.pack b{position:relative;font:400 1.02rem var(--title);display:block}
+.pack small{position:relative;color:var(--muted);font-size:.76rem;display:block;line-height:1.25}
+.pack input{position:relative;appearance:none;flex:none;width:46px;height:25px;margin:2px 0 0;border-radius:13px;background:#ffffff26;cursor:pointer;transition:background .2s}
+.pack input::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:var(--text);transition:transform .2s}
+.pack input:checked{background:var(--c)}.pack input:checked::after{transform:translateX(21px);background:#14151B}
+.pack input:disabled{opacity:.4;cursor:not-allowed}
+.pack:has(input:checked){border-color:var(--c);box-shadow:0 0 28px color-mix(in srgb,var(--c) 40%,transparent)}
+.pack:has(input:checked)::before{opacity:1}
+.pack:has(input:checked) img{filter:drop-shadow(0 8px 16px color-mix(in srgb,var(--c) 70%,transparent));animation:float 3.2s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-7px) rotate(-1.5deg)}}
+
+/* Historique */
+.vault{display:grid;grid-template-columns:minmax(0,400px) minmax(0,1fr);gap:22px;align-items:start}
+.side{position:sticky;top:14px;display:grid;gap:12px;max-height:calc(100vh - 28px);overflow-y:auto;scrollbar-width:thin}
+.panel{padding:14px}
+.dial{position:relative;aspect-ratio:1;margin:-4px;user-select:none}
+.dial canvas,.dial svg{position:absolute;inset:0;width:100%;height:100%}
+.dial canvas{pointer-events:none}
+.track{fill:none;stroke:#ffffff14;stroke-width:9;stroke-linecap:round}
+.track-hit{fill:none;stroke:transparent;stroke-width:36;cursor:pointer;pointer-events:stroke}
+.wedge{fill:url(#wedge);pointer-events:none}
+.sel{fill:none;stroke:url(#sel);stroke-width:9;stroke-linecap:round;filter:drop-shadow(0 0 6px #ffc83daa);pointer-events:none}
+.tick{fill:var(--muted);font:700 10.5px Nunito,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;cursor:pointer}
+.tick:hover{fill:var(--text)}
+.tickm{stroke:#ffffff55;stroke-width:1.5;pointer-events:none}
+.handle{cursor:grab;touch-action:none;outline:none}
+.handle:active{cursor:grabbing}
+.handle .hit{fill:transparent}
+.handle .dot{fill:#14151B;stroke:var(--accent);stroke-width:3.5;filter:drop-shadow(0 0 7px #ffc83d);transition:r .12s}
+.handle .in{fill:var(--accent)}
+.handle:hover .dot,.handle:focus-visible .dot{r:13}
+.handle:focus-visible .dot{stroke:#fff}
+.hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:29%;text-align:center;pointer-events:none;line-height:1.1}
+.hub small{display:block;color:var(--muted);font-size:clamp(.58rem,1.9vw,.72rem);text-transform:uppercase;letter-spacing:.7px}
+.hub b{display:block;font:400 clamp(1.05rem,4vw,1.5rem) var(--title);margin:3px 0;white-space:nowrap}
+.hub span{color:var(--accent);font-weight:800;font-size:clamp(.66rem,2vw,.8rem)}
+.range{text-align:center;color:var(--muted);font-size:.8rem;min-height:1.2em;margin:2px 0 10px;font-variant-numeric:tabular-nums}
+.presets{display:flex;flex-wrap:wrap;gap:5px;justify-content:center}
+.presets button{padding:3px 11px;border-radius:999px;border:1px solid var(--line);font-size:.84rem;color:var(--muted)}
+.presets button:hover{color:var(--text)}
+.presets button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#14151B;font-weight:800}
+.typed{margin-top:10px}
+input[type=text],input[type=search]{width:100%;background:#0005;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:7px 11px;font:inherit}
+input[aria-invalid=true]{border-color:var(--danger)}
+.ftitle{font-size:.74rem;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:7px;display:block}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid color-mix(in srgb,var(--rc) 65%,transparent);border-radius:999px;padding:3px 11px;cursor:pointer;font-size:.84rem;transition:background .15s}
+.chip:has(input:checked){background:var(--rc);color:#14151B;font-weight:800;box-shadow:0 0 12px color-mix(in srgb,var(--rc) 60%,transparent)}
+.chip input{position:absolute;opacity:0;width:1px;height:1px}
+.chip:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.lic summary{cursor:pointer;display:list-item;margin-bottom:0}
+.lic[open] summary{margin-bottom:4px}
+.lic input[type=search]{margin:8px 0}
+.lic-list{max-height:210px;overflow:auto;display:grid;gap:3px;font-size:.92rem}
+.lic-list label{display:flex;gap:7px;align-items:center;cursor:pointer}
+.lic-list label[hidden]{display:none}
+.lic-list input{accent-color:var(--accent)}
+
+/* Ouvertures */
+.opening{--aura:transparent;position:relative;padding:12px 14px 14px;margin-bottom:14px;animation:rise .4s ease both;box-shadow:0 0 34px var(--aura)}
+.opening.b4{--aura:#ffc83d26;border-color:#ffc83d66}
+.opening.b5{--aura:#f0566b33;border-color:#f0566b88}
+.opening.b6{--aura:#b49bff40;border-color:#b49bff99}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.head img{height:40px;width:auto;flex:none;filter:drop-shadow(0 3px 5px #0009)}
+.head h3{font-size:1.04rem}.head small{color:var(--muted);display:block;font-size:.78rem}
+.new{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;background:linear-gradient(120deg,#ff5f93,#ffb14a);color:#1b0d14;font-size:.72rem;font-weight:800;letter-spacing:.4px}
+.new::before{content:"";width:7px;height:7px;border-radius:50%;background:#fff;animation:blip 1.5s infinite}
+@keyframes blip{0%{box-shadow:0 0 0 0 #fff}100%{box-shadow:0 0 0 8px #fff0}}
+.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+@media(max-width:620px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.card{--rc:var(--r0);--rx:0deg;--ry:0deg;--mx:50%;--my:50%;display:block;width:100%;padding:0;text-align:left;border-radius:11px;background:#0005;border:2px solid var(--rc);overflow:hidden;position:relative;transform:perspective(600px) rotateX(var(--rx)) rotateY(var(--ry));transition:transform .15s,box-shadow .2s}
+.card:hover{z-index:2;box-shadow:0 10px 24px #000a,0 0 16px color-mix(in srgb,var(--rc) 50%,transparent)}
+.art{aspect-ratio:5/7;background:#0005;display:grid;place-items:center;color:var(--muted);font-size:1.6rem;position:relative}
+.art img{width:100%;height:100%;object-fit:cover;display:block}
+.card.holo .art::after{content:"";position:absolute;inset:0;pointer-events:none;mix-blend-mode:color-dodge;opacity:.12;transition:opacity .2s;
+  background:radial-gradient(circle at var(--mx) var(--my),#fff9,transparent 42%),linear-gradient(115deg,#ff5f9366,#ffe45c55,#5cffb555,#5cc8ff66,#c07bff66)}
+.card.holo:hover .art::after{opacity:.75}
+.card.r5,.card.r6{animation:shine 3s ease-in-out infinite}
+@keyframes shine{50%{box-shadow:0 0 16px color-mix(in srgb,var(--rc) 70%,transparent)}}
+.first{position:absolute;z-index:1;top:5px;left:5px;width:24px;height:24px;display:grid;place-items:center;border-radius:50%;background:var(--accent);color:#14151B;font-size:14px;line-height:1;box-shadow:0 0 10px #ffc83dcc,0 1px 3px #000a}
+.info{padding:6px 7px 8px;font-size:.76rem;display:block}
+.info b{display:block;font-weight:800;font-size:.84rem;line-height:1.2;overflow-wrap:anywhere}
+.rar{display:block;color:var(--rc);font-weight:800;font-size:.72rem}
+.info small{display:block;color:var(--muted);line-height:1.2}
+.more{display:block;margin:16px auto 0}
+.empty{color:var(--muted);padding:34px;text-align:center}
+#total{color:var(--muted);font:600 .95rem Nunito,system-ui,sans-serif;margin-left:4px}
+
+/* Zoom */
+dialog{background:none;border:0;padding:0;max-width:min(88vw,380px);color:var(--text);overflow:visible}
+dialog:focus{outline:none}
+dialog::backdrop{background:#05060cdd;backdrop-filter:blur(8px)}
+dialog .card{cursor:default;animation:pop .28s cubic-bezier(.2,1.4,.5,1)}
+dialog .info{font-size:1rem;padding:12px}dialog .info b{font:400 1.3rem var(--title)}dialog .rar{font-size:.95rem}dialog .info small{font-size:.9rem}
+@keyframes pop{from{transform:scale(.7);opacity:0}}
+
+details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summary{cursor:pointer}details.log ul{padding:0;list-style:none}
+
+@media(max-width:940px){.vault{grid-template-columns:minmax(0,1fr)}.side{position:static;max-height:none;overflow:visible}.dial{max-width:420px;margin:-4px auto}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+.tabs{display:flex;gap:6px;margin-top:18px;border-bottom:1px solid var(--line)}
+.tabs a{padding:8px 16px;margin-bottom:-1px;color:var(--muted);font-weight:800;text-decoration:none;border-bottom:3px solid transparent}
+.tabs a:hover{color:var(--text)}
+.tabs a[aria-current=page]{color:var(--text);border-color:var(--accent)}
+.subtabs{margin-top:10px;font-size:.92rem}
+.tabs .pbadge{margin-left:6px;vertical-align:1px}
+.rfilters :is(select,input){width:100%;min-width:0}
+.exch{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:22px;align-items:start}
+.people{position:sticky;top:14px;display:grid;gap:10px}
+.people input{width:100%;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:#0004;color:var(--text);font:inherit}
+.plist{display:grid;gap:3px;max-height:calc(100vh - 150px);overflow-y:auto;scrollbar-width:thin}
+.plist button{display:flex;gap:10px;align-items:center;width:100%;padding:6px 8px;border-radius:10px;color:var(--text);text-align:left}
+.plist button:hover{background:var(--glass)}
+.plist button[aria-pressed=true]{background:var(--glass2)}
+.plist img,.pav{flex:none;width:32px;height:32px;border-radius:50%;object-fit:cover;background:var(--glass2);display:grid;place-items:center;font-weight:800}
+.plist b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plist span{min-width:0}
+.plist small{color:var(--muted)}
+.xhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.xhead h2{margin:0}
+.xnote{color:var(--muted);font-size:.92rem;margin:0 0 14px}
+.xblock{padding:14px;margin-bottom:14px}
+.xblock h3{margin-bottom:10px}
+.sides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.sides h4{margin:0 0 8px;color:var(--muted);font-size:.85rem}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:10px}
+.tag{display:block;margin-top:4px;font-size:.72rem;line-height:1.25;color:var(--muted)}
+.tag.medium{color:#ffc83d}
+.tag.high{color:#ff8a98}
+.pbadge{flex:none;margin-left:auto;min-width:22px;padding:1px 6px;border-radius:999px;background:var(--accent);color:#14151B;font-size:.75rem;font-weight:800;text-align:center}
+.pbadge[hidden]{display:none}
+.xfilters{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.xfilters .modes{flex-wrap:wrap;border-radius:14px}
+.xsafe{display:inline-flex;gap:6px;align-items:center;font-size:.8rem;color:var(--muted);cursor:pointer}
+.xsafe input{accent-color:var(--accent)}
+.pick{display:block;width:100%;margin-top:6px;padding:3px 8px;font-size:.78rem}
+.pick[aria-pressed=true]{color:var(--text);background:var(--glass2)}
+.pick:disabled{opacity:.45;cursor:not-allowed}
+.compose{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.compose textarea{display:block;margin:14px 0 2px}
+.compose>small{display:block;color:var(--muted);text-align:right;margin-bottom:10px}
+.compose .btn:disabled{opacity:.5;cursor:not-allowed}
+.xwarn{color:#ffc83d;font-size:.85rem;margin:0 0 10px}
+.xsent{color:#7be08f;font-weight:800;margin:0 0 14px}
+.tag.dupe{color:#7be08f;font-weight:800}
+.tag.newc{color:var(--accent);font-weight:800}
+.status{margin-left:auto;padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:800;background:var(--glass2)}
+.status.acceptee{background:#7be08f;color:#14151B}.status.refusee{background:var(--danger);color:#14151B}.status.attente{background:var(--accent);color:#14151B}
+.xfilters select{background:#0005;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:5px 9px;font:inherit}
+.pend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:14px}
+.pend>div>h3{margin-bottom:10px}
+.ptrade .head{flex-wrap:wrap}
+.ptrade .head img{height:34px;width:34px;border-radius:50%;object-fit:cover}
+.ptrade blockquote{margin:0 0 10px;color:var(--muted);font-style:italic;overflow-wrap:anywhere}
+.acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+.quiet{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.85rem;color:var(--muted)}
+.quiet input[type=time]{background:#0005;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:3px 6px;font:inherit}
+.quiet input[type=checkbox]{accent-color:var(--accent)}
+.quiet b{color:#ffc83d}
+.recy{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,320px);gap:22px;align-items:start}
+.rfilters{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;align-items:end;margin-bottom:12px}
+.rfilters label{display:grid;gap:4px;font-size:.8rem;color:var(--muted)}
+.rfilters select,.rfilters input[type=number],.rbulk input{background:#0005;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:7px 9px;font:inherit}
+.rbulk{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0;color:var(--muted);font-size:.9rem}
+.rbulk input{width:60px;padding:4px 6px}
+.qty{display:flex;gap:4px;align-items:center;margin-top:6px;font-size:.78rem;color:var(--muted)}
+.qty input{width:100%;min-width:0;background:#0005;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:3px 6px;font:inherit}
+.sel-on .card{outline:3px solid var(--accent);outline-offset:2px}
+.summary{position:sticky;top:14px;display:grid;gap:10px}
+.summary ul{list-style:none;margin:0;padding:0;max-height:45vh;overflow:auto;display:grid;gap:4px;font-size:.88rem}
+.summary li{display:flex;gap:8px;align-items:center}
+.summary li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.summary li button{color:var(--muted);padding:0 4px}
+.summary .btn:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:940px){.exch,.recy,.pend{grid-template-columns:minmax(0,1fr)}.people,.summary{position:static}.plist{max-height:260px}}
+@media(max-width:620px){.sides{grid-template-columns:minmax(0,1fr)}}
+/* Notifications */
+.notif{position:relative}
+.notif summary{list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;gap:6px;padding:0 14px;border-radius:13px;background:var(--glass);border:1px solid var(--line);font-weight:800}
+.notif summary::-webkit-details-marker{display:none}
+.notif .pbadge{margin-left:0}
+.npanel{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:min(360px,calc(100vw - 32px));max-height:60vh;overflow:auto;padding:10px;background:#15172a;border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px #000a}
+.npanel ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.npanel li{padding:8px 10px;border-radius:10px;background:var(--glass)}
+.npanel li.unread{border-left:3px solid var(--accent)}
+.npanel b{display:block}.npanel small{color:var(--muted);display:block;font-size:.78rem}
+/* Statistiques */
+.tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.chartbox{padding:14px;margin-bottom:14px}
+.chartbox .xhead{margin-bottom:8px}
+.chartbox .modes{flex-wrap:wrap}
+.chartbox h3{font-size:1.05rem}
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .grid-l{stroke:#ffffff14;stroke-width:1}
+.chart text{fill:var(--muted);font:600 11px Nunito,system-ui,sans-serif}
+.chart .line{fill:none;stroke-width:2;stroke-linejoin:round}
+.chart .cross{stroke:#ffffff55;stroke-width:1}
+.chart .tip{position:absolute;pointer-events:none;transform:translate(-50%,-110%);background:#15172a;border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:.8rem;white-space:nowrap}
+.envy{width:100%;border-collapse:collapse;font-size:.92rem}
+.envy th{text-align:left;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.6px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.envy td{padding:6px 8px;border-bottom:1px solid #ffffff0a;font-variant-numeric:tabular-nums}
+.envy .bar{display:flex;align-items:center;gap:8px}
+.envy .bar i{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);min-width:2px}
+@media(max-width:940px){.stats{grid-template-columns:minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Surcouche Aevyz</h1>
+    <div class="hud"><div class="hud" id="hud" aria-live="polite"></div>
+      <details class="notif" id="notif"><summary id="notifBtn" aria-label="Notifications">🔔<mark class="pbadge" id="notifCount" hidden></mark></summary>
+        <div class="npanel"><ul id="notifList"><li>Chargement…</li></ul></div></details></div>
+  </div>
+  <div class="alert" id="alert" role="alert" hidden></div>
+
+  <section id="connect" class="glass" hidden>
+    <h2>Connecter ton compte</h2>
+    <ol>
+      <li>Ouvre une <b>fenêtre de navigation privée</b>, va sur <a id="siteLink" target="_blank" rel="noreferrer">aevyz.com</a> et connecte-toi avec Discord.</li>
+      <li>Ouvre la console (F12). Colle ceci, puis appuie sur Entrée. Si le navigateur bloque le collage, tape d'abord <code>allow pasting</code>.<br>
+        <code>copy(localStorage.getItem('sb-vmobbiulvvchbezkxeat-auth-token'))</code></li>
+      <li><b>Ferme la fenêtre privée sans te déconnecter</b> : se déconnecter annulerait la session.</li>
+      <li>Colle le contenu ici. Il donne accès à ton compte : ne le colle nulle part ailleurs.</li>
+    </ol>
+    <form id="connectForm">
+      <textarea id="sessionInput" aria-label="Session Aevyz" autocomplete="off" spellcheck="false" required></textarea>
+      <button class="btn">Connecter</button>
+    </form>
+  </section>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#boosters">Boosters</a>
+    <a href="#echanges">Échanges<mark class="pbadge" data-pending hidden></mark></a>
+    <a href="#recyclage">Recyclage</a>
+    <a href="#stats">Stats</a>
+  </nav>
+
+  <div id="viewBoosters">
+  <section>
+    <div class="packs-head">
+      <h2>Booster à ouvrir automatiquement</h2>
+      <div class="modes" role="radiogroup" aria-label="Rythme d'ouverture">
+        <label><input type="radio" name="mode" value="each">À chaque booster</label>
+        <label><input type="radio" name="mode" value="batch">Par lot de 9</label>
+        <label><input type="radio" name="mode" value="sneaky">Sneaky</label>
+      </div>
+      <form class="quiet" id="quietForm" title="Aucun booster n'est ouvert pendant cette tranche horaire (heure du serveur). Ils s'accumulent dans la réserve.">
+        <label><input type="checkbox" id="quietOn"> Pause de</label>
+        <input type="time" id="quietFrom" aria-label="Début de la pause" required> à
+        <input type="time" id="quietTo" aria-label="Fin de la pause" required>
+        <b id="quietNow" hidden>en pause</b>
+      </form>
+    </div>
+    <div class="packs" id="packs"></div>
+  </section>
+
+  <section>
+    <h2>Historique <span id="total"></span></h2>
+    <div class="vault">
+      <aside class="side">
+        <div class="glass panel">
+          <div class="dial" id="dial">
+            <canvas id="sky" width="880" height="880"></canvas>
+            <svg id="dialSvg" viewBox="0 0 440 440" aria-label="Cadran du temps : chaque étoile est un booster ouvert. Déplace les deux poignées pour choisir la période.">
+              <defs>
+                <radialGradient id="wedge" gradientUnits="userSpaceOnUse" cx="220" cy="220" r="182"><stop offset=".3" stop-color="#ffc83d" stop-opacity="0"/><stop offset="1" stop-color="#ffc83d" stop-opacity=".16"/></radialGradient>
+                <linearGradient id="sel"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#ff7ab0"/></linearGradient>
+              </defs>
+              <path id="wedgePath" class="wedge"/>
+              <path id="trackPath" class="track"/>
+              <path id="trackHit" class="track-hit"/>
+              <path id="selPath" class="sel"/>
+              <g id="ticks"></g>
+              <g id="hB" class="handle" tabindex="0" role="slider" aria-label="Début de la période"><circle class="hit" r="24"/><circle class="dot" r="11"/><circle class="in" r="3.5"/></g>
+              <g id="hA" class="handle" tabindex="0" role="slider" aria-label="Fin de la période"><circle class="hit" r="24"/><circle class="dot" r="11"/><circle class="in" r="3.5"/></g>
+            </svg>
+            <div class="hub"><small id="hubTop"></small><b id="hubMain"></b><span id="hubCount"></span></div>
+          </div>
+          <div class="range" id="range"></div>
+          <div class="presets" id="presets"></div>
+          <form class="typed" id="typedForm"><input type="text" id="typed" placeholder="Ou tape : 8h, 45min, 2j, ou 8h 24h" aria-label="Période : une durée, ou deux durées pour une fenêtre passée" autocomplete="off"></form>
+        </div>
+        <div class="glass panel">
+          <span class="ftitle">Rareté</span>
+          <div class="chips" id="rarities"></div>
+        </div>
+        <div class="glass panel">
+          <details class="lic">
+            <summary class="ftitle" id="licSummary">Licences</summary>
+            <input type="search" id="licSearch" placeholder="Chercher une licence" aria-label="Chercher une licence">
+            <div class="lic-list" id="licList"></div>
+          </details>
+        </div>
+        <button class="ghost" id="reset">Effacer les filtres</button>
+      </aside>
+      <div>
+        <div id="grid"></div>
+        <button class="ghost more" id="more" hidden>Voir plus</button>
+      </div>
+    </div>
+  </section>
+  </div>
+
+  <div id="viewTrades" hidden>
+    <nav class="tabs subtabs" aria-label="Échanges">
+      <a href="#echanges">Proposer un échange</a>
+      <a href="#echanges-attente">En attente<mark class="pbadge" data-pending hidden></mark></a>
+      <a href="#echanges-historique">Historique</a>
+    </nav>
+    <section id="subHistory">
+      <div class="xhead"><h2>Historique des échanges <span id="thTotal" class="xnote"></span></h2>
+        <div class="xfilters">
+          <select id="thStatus" aria-label="Statut"><option value="">Tous les statuts</option><option value="acceptee">Acceptés</option><option value="refusee">Refusés</option><option value="annulee">Annulés</option><option value="expiree">Expirés</option><option value="attente">En attente</option></select>
+          <select id="thSide" aria-label="Sens"><option value="">Reçus et envoyés</option><option value="in">Reçus</option><option value="out">Envoyés</option></select>
+          <button class="ghost" id="thReload" type="button">Actualiser</button>
+        </div>
+      </div>
+      <div id="tradeHistory" aria-live="polite"><p class="xnote">Chargement…</p></div>
+    </section>
+    <section id="subPending">
+      <div class="xhead"><h2>Échanges en attente</h2><button class="ghost" id="pendingReload" type="button">Actualiser</button></div>
+      <div id="pending" aria-live="polite"><p class="xnote">Chargement…</p></div>
+    </section>
+    <section class="exch" id="subPropose">
+      <aside class="people glass panel">
+        <input type="search" id="playerSearch" placeholder="Chercher un joueur" aria-label="Chercher un joueur">
+        <small id="playersInfo" class="xnote" style="margin:0"></small>
+        <div class="plist" id="playerList"></div>
+      </aside>
+      <div>
+        <div class="xhead">
+          <h2 id="tradeTitle">Choisis un joueur</h2>
+          <div class="xfilters">
+            <div class="modes" role="radiogroup" aria-label="Cartes à utiliser">
+              <label><input type="radio" name="tradeMode" value="classic" checked>Classique</label>
+              <label><input type="radio" name="tradeMode" value="mine">Mes doublons</label>
+              <label><input type="radio" name="tradeMode" value="both">Doublons des deux</label>
+              <label title="Ignore les envies des deux joueurs et ne garde que les cartes possédées au moins en double par chacun."><input type="radio" name="tradeMode" value="dupes">Doublons sans envies</label>
+            </div>
+            <label class="xsafe" title="Écarte ses seuls exemplaires dans une licence où ce joueur a des envies. Ses doublons restent proposés."><input type="checkbox" id="tradeSafe">Sans les licences recherchées (sauf doublons)</label>
+            <label class="xsafe" title="Masque les cartes déjà engagées dans un échange en attente, envoyé ou reçu : de « Tu reçois » celles que tu recevrais, de « Tu donnes » celles que tu donnerais. Tes envies sur Aevyz ne changent pas."><input type="checkbox" id="tradePending">Sans les cartes déjà en attente</label>
+          </div>
+        </div>
+        <div id="tradeBody" aria-live="polite"><p class="xnote">Les modes classiques suivent vos envies. « Doublons sans envies » les ignore et ne garde que les cartes dont vous avez chacun au moins deux exemplaires. La pastille indique la taille de l'échange maximum. Rien ne part sans ton clic sur « Envoyer ».</p></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="viewRecycle" hidden>
+    <section class="recy">
+      <div>
+        <h2>Recyclage <span id="recyTotal" class="xnote"></span></h2>
+        <div class="glass panel">
+          <div class="rfilters">
+            <label>Nom<input type="search" id="rSearch" placeholder="Chercher une carte"></label>
+            <label>Licence<select id="rLicence"><option value="">Toutes</option></select></label>
+            <label>Exemplaires minimum<input type="number" id="rMin" min="1" value="2"></label>
+            <label>Tri<select id="rSort">
+              <option value="rarity">Rareté (commune d'abord)</option>
+              <option value="-rarity">Rareté (rare d'abord)</option>
+              <option value="-count">Exemplaires (plus d'abord)</option>
+              <option value="licence">Licence</option>
+              <option value="name">Nom</option>
+              <option value="-value">Pièces récupérables</option>
+            </select></label>
+          </div>
+          <span class="ftitle">Rareté</span>
+          <div class="chips" id="rRarities"></div>
+          <div class="rbulk">
+            <button class="ghost" type="button" id="rSelectAll">Tout sélectionner</button>
+            <span>en gardant <input type="number" id="rKeep" min="1" value="1" aria-label="Exemplaires à garder"> exemplaire(s)</span>
+            <button class="ghost" type="button" id="rClear">Vider la sélection</button>
+          </div>
+        </div>
+        <div class="tgrid" id="recyList" style="margin-top:14px"></div>
+      </div>
+      <aside class="summary glass panel" aria-live="polite">
+        <h3>Sélection</h3>
+        <ul id="rSel"></ul>
+        <p class="xnote" id="rSum" style="margin:0"></p>
+        <p class="xwarn" id="rErr" role="alert" hidden></p>
+        <button class="btn" type="button" id="rGo" disabled>Recycler</button>
+      </aside>
+    </section>
+  </div>
+
+  <div id="viewStats" hidden>
+    <nav class="tabs subtabs" aria-label="Statistiques">
+      <a href="#stats">Joueurs</a>
+      <a href="#stats-licences">Licences</a>
+    </nav>
+    <section class="exch stats" id="subStatsPlayers">
+      <aside class="people glass panel">
+        <input type="search" id="stSearch" placeholder="Chercher un joueur" aria-label="Chercher un joueur">
+        <small class="xnote" id="stInfo" style="margin:0"></small>
+        <div class="plist" id="stList"></div>
+      </aside>
+      <div id="stBody" aria-live="polite"><p class="xnote">Chargement…</p></div>
+    </section>
+    <section id="subStatsLicences">
+      <div class="xhead"><h2>Licences les plus enviées</h2>
+        <div class="xfilters"><input type="search" id="lvSearch" placeholder="Chercher une licence" aria-label="Chercher une licence" style="width:auto">
+          <select id="lvSort" aria-label="Tri" style="background:#0005;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:5px 9px;font:inherit">
+            <option value="players">Joueurs qui l'envient</option><option value="cards">Cartes voulues</option><option value="ratio">Cartes voulues par carte de la licence</option><option value="licence">Nom</option>
+          </select></div></div>
+      <p class="xnote" id="lvInfo"></p>
+      <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Licence</th><th>Joueurs</th><th>Cartes voulues</th><th>Cartes dans la licence</th></tr></thead><tbody id="lvBody"></tbody></table></div>
+    </section>
+  </div>
+
+  <details class="log"><summary>Activité</summary><ul id="logs"></ul></details>
+</main>
+<dialog id="zoom" aria-label="Carte en grand"></dialog>
+<script>
+if (!location.pathname.endsWith('/')) location.replace(location.pathname + '/' + location.search + location.hash); // URL relatives : /aevyz → /aevyz/
+const $ = id => document.getElementById(id);
+const RARITIES = ['Commune', 'Peu commune', 'Rare', 'Épique', 'Légendaire', 'Mythique', 'Mythique Alternative'];
+const RCOL = ['#A3A7B4', '#5BC46A', '#4A9BE8', '#A87BEA', '#FFC83D', '#F0566B', '#B49BFF'];
+const THEME_COLOR = {base: '#F2F0EA', licences: '#F4B63F', action: '#FF7A45', rpg: '#44B57A', competition: '#4FC3E8', detente: '#F59AC2', moba: '#7C8CFF', retro: '#5BC46A', fighting: '#F0566B', halloween: '#FF8A3D'};
+const MIN = 6e4, HOUR = 36e5, DAY = 864e5;
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const svgEl = (tag, attrs) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+const time = t => new Date(t).toLocaleString('fr-FR', {dateStyle: 'short', timeStyle: 'short'});
+const plural = (n, w) => `${n.toLocaleString('fr-FR')} ${w}${n > 1 ? 's' : ''}`;
+function ago(ms) {
+  if (ms < HOUR) return Math.max(0, Math.round(ms / MIN)) + ' min';
+  if (ms < 2 * DAY) { const h = Math.floor(ms / HOUR), m = Math.round((ms - h * HOUR) / MIN); return m ? `${h} h ${String(m).padStart(2, '0')}` : `${h} h`; }
+  const d = Math.floor(ms / DAY), h = Math.round((ms - d * DAY) / HOUR);
+  return h && d < 14 ? `${d} j ${h} h` : `${d} j`;
+}
+const post = async (url, body) => {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Erreur ' + r.status);
+  return d;
+};
+
+// ---- Cadran du temps : l'angle donne l'âge (échelle logarithmique), le rayon la meilleure rareté du booster ----
+const C = 220, R = 182, SPAN = 330, SCALE = 5 * MIN;
+let win = {a: 0, b: Infinity}, stars = [], reveal = REDUCED ? 1 : 0, fresh = {since: null, count: 0};
+const maxAgo = () => Math.max(14 * DAY, stars.length ? (Date.now() - stars[0][0]) * 1.03 : 0);
+const toU = t => t === Infinity ? 1 : Math.min(1, Math.log1p(t / SCALE) / Math.log1p(maxAgo() / SCALE));
+const step = t => t < 2 * HOUR ? 5 * MIN : t < 2 * DAY ? 30 * MIN : t < 14 * DAY ? 6 * HOUR : DAY;
+const snap = t => Math.round(t / step(t)) * step(t);
+const fromU = u => u >= .993 ? Infinity : snap(SCALE * Math.expm1(u * Math.log1p(maxAgo() / SCALE)));
+const polar = (u, r) => { const t = (u * SPAN - 90) * Math.PI / 180; return [C + r * Math.cos(t), C + r * Math.sin(t)]; };
+function arc(u1, u2, r) {
+  const [x1, y1] = polar(u1, r), [x2, y2] = polar(u2, r);
+  return `M${x1} ${y1}A${r} ${r} 0 ${(u2 - u1) * SPAN > 180 ? 1 : 0} 1 ${x2} ${y2}`;
+}
+const inWin = at => { const t = Date.now() - at; return t >= win.a && t <= win.b; };
+
+const sky = $('sky').getContext('2d');
+sky.scale(2, 2);
+function drawSky() {
+  sky.clearRect(0, 0, 440, 440);
+  RCOL.forEach((c, i) => {
+    sky.beginPath(); sky.arc(C, C, 74 + i * 15, 0, 7);
+    sky.strokeStyle = c + '1c'; sky.lineWidth = 1; sky.stroke();
+  });
+  const now = Date.now(), baseline = fresh.since;
+  for (const [at, best] of stars) {
+    const u = toU(now - at);
+    if (u > reveal) continue;
+    const rar = best ?? 0, on = inWin(at);
+    const [x, y] = polar(u, 74 + rar * 15 + ((at % 97) / 97 - .5) * 9);
+    const size = [1.3, 1.5, 1.9, 2.7, 3.5, 4.3, 4.6][rar];
+    sky.globalAlpha = on ? 1 : .16;
+    sky.fillStyle = RCOL[rar];
+    if (on && rar >= 3) { sky.shadowColor = RCOL[rar]; sky.shadowBlur = 5 + rar * 2; }
+    sky.beginPath(); sky.arc(x, y, size, 0, 7); sky.fill();
+    sky.shadowBlur = 0;
+    if (on && rar >= 5) { // éclat en croix pour les Mythiques
+      sky.strokeStyle = RCOL[rar]; sky.lineWidth = 1; sky.beginPath();
+      sky.moveTo(x - 10, y); sky.lineTo(x + 10, y); sky.moveTo(x, y - 10); sky.lineTo(x, y + 10); sky.stroke();
+    }
+    if (baseline && at > baseline) { // pas encore vu
+      sky.globalAlpha = 1; sky.strokeStyle = '#fff'; sky.lineWidth = 1.2;
+      sky.beginPath(); sky.arc(x, y, size + 3.5, 0, 7); sky.stroke();
+    }
+  }
+  sky.globalAlpha = 1;
+}
+function drawTicks() {
+  const list = [['maintenant', 0, 'tous'], ['1 h', HOUR], ['8 h', 8 * HOUR], ['24 h', DAY], ['3 j', 3 * DAY], ['7 j', 7 * DAY], ['30 j', 30 * DAY], ['90 j', 90 * DAY], ['1 an', 365 * DAY]];
+  $('ticks').replaceChildren(...list.filter(t => t[1] < maxAgo()).flatMap(([label, t]) => {
+    const u = toU(t), [x1, y1] = polar(u, R + 7), [x2, y2] = polar(u, R + 12), [x, y] = polar(u, R + 25);
+    const text = svgEl('text', {class: 'tick', x, y: t ? y : y + 4});
+    text.textContent = label;
+    text.onclick = () => setWin(t ? {a: 0, b: t} : {a: 0, b: win.b});
+    return [svgEl('line', {class: 'tickm', x1, y1, x2, y2}), text];
+  }));
+  $('trackPath').setAttribute('d', arc(0, 1, R));
+  $('trackHit').setAttribute('d', arc(0, 1, R));
+}
+let skyQueued = false;
+function queueSky() { if (!skyQueued) { skyQueued = true; requestAnimationFrame(() => { skyQueued = false; drawSky(); }); } }
+function renderDial() {
+  const ua = toU(win.a), ub = toU(win.b);
+  $('selPath').setAttribute('d', arc(ua, Math.max(ub, ua + .002), R));
+  const [x1, y1] = polar(ua, R), [x2, y2] = polar(ub, R);
+  $('wedgePath').setAttribute('d', `M${C} ${C}L${x1} ${y1}A${R} ${R} 0 ${(ub - ua) * SPAN > 180 ? 1 : 0} 1 ${x2} ${y2}Z`);
+  $('hA').setAttribute('transform', `translate(${x1} ${y1})`);
+  $('hB').setAttribute('transform', `translate(${x2} ${y2})`);
+  $('hA').setAttribute('aria-valuetext', win.a ? 'il y a ' + ago(win.a) : 'maintenant');
+  $('hB').setAttribute('aria-valuetext', win.b === Infinity ? 'depuis le début' : 'il y a ' + ago(win.b));
+  for (const [id, u] of [['hA', ua], ['hB', ub]]) {
+    $(id).setAttribute('aria-valuemin', 0); $(id).setAttribute('aria-valuemax', 100); $(id).setAttribute('aria-valuenow', Math.round(u * 100));
+  }
+  const all = win.a === 0 && win.b === Infinity;
+  $('hubTop').textContent = all ? 'depuis' : win.a === 0 ? 'dernières' : win.b === Infinity ? 'il y a plus de' : 'il y a';
+  $('hubMain').textContent = all ? 'toujours' : win.a === 0 ? ago(win.b) : win.b === Infinity ? ago(win.a) : `${ago(win.a)} → ${ago(win.b)}`;
+  $('hubMain').style.fontSize = win.a && win.b !== Infinity ? 'clamp(.72rem,2.4vw,.92rem)' : '';
+  $('hubCount').textContent = plural(stars.filter(s => inWin(s[0])).length, 'booster');
+  const now = Date.now();
+  $('range').textContent = all ? 'Chaque étoile est un booster. Plus elle est loin du centre, plus il est rare.'
+    : `${win.b === Infinity ? 'Début' : time(now - win.b)} → ${win.a ? time(now - win.a) : 'maintenant'}`;
+  $('presets').querySelectorAll('button').forEach(p => p.setAttribute('aria-pressed', win.a === 0 && win.b === +p.dataset.b));
+  queueSky();
+}
+let reloadT = 0;
+function setWin(w) {
+  win = w;
+  saveFilters();
+  renderDial();
+  clearTimeout(reloadT);
+  reloadT = setTimeout(() => loadHistory(), 160);
+}
+// Déplacer une poignée ; elles ne peuvent pas se croiser.
+function moveHandle(which, t) {
+  if (which === 'a') setWin({a: t === Infinity ? win.a : Math.min(t, win.b === Infinity ? t : win.b - step(win.b)), b: win.b});
+  else setWin({a: win.a, b: t === Infinity ? t : Math.max(t, win.a + step(win.a))});
+}
+function uFromEvent(e) {
+  const r = $('dialSvg').getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * 440 - C, y = (e.clientY - r.top) / r.height * 440 - C;
+  const d = (Math.atan2(y, x) * 180 / Math.PI + 90 + 360) % 360;
+  return d > SPAN ? (d > SPAN + 15 ? 0 : 1) : d / SPAN;
+}
+for (const [id, which] of [['hA', 'a'], ['hB', 'b']]) {
+  const h = $(id);
+  h.onpointerdown = e => { h.setPointerCapture(e.pointerId); h.dragging = true; e.preventDefault(); h.focus({preventScroll: true}); };
+  h.onpointermove = e => { if (h.dragging) moveHandle(which, fromU(uFromEvent(e))); };
+  h.onpointerup = h.onpointercancel = () => { h.dragging = false; };
+  h.onkeydown = e => {
+    const dir = {ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1}[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    const cur = win[which];
+    if (cur === Infinity) { if (dir < 0) moveHandle(which, snap(maxAgo())); return; }
+    moveHandle(which, Math.max(0, snap(cur) + dir * step(cur)));
+  };
+}
+$('trackHit').onclick = e => {
+  const u = uFromEvent(e), t = fromU(u);
+  moveHandle(Math.abs(u - toU(win.a)) < Math.abs(u - toU(win.b)) ? 'a' : 'b', t);
+};
+[['1 h', HOUR], ['8 h', 8 * HOUR], ['24 h', DAY], ['3 j', 3 * DAY], ['7 j', 7 * DAY], ['30 j', 30 * DAY], ['Tout', Infinity]].forEach(([label, b]) => {
+  const p = el('button', {type: 'button', textContent: label, onclick: () => { $('typed').value = ''; setWin({a: 0, b}); }});
+  p.dataset.b = b;
+  $('presets').append(p);
+});
+// « 8h » = les 8 dernières heures ; « 8h 24h » = entre il y a 8 h et il y a 24 h.
+function parseWindow(s) {
+  const units = {min: MIN, m: MIN, h: HOUR, j: DAY, d: DAY};
+  const t = [...s.toLowerCase().matchAll(/(\d+(?:[.,]\d+)?)\s*(min|m|h|j|d)/g)].map(m => parseFloat(m[1].replace(',', '.')) * units[m[2]]);
+  if (t.length === 1 && t[0] > 0) return {a: 0, b: t[0]};
+  if (t.length === 2 && t[0] !== t[1]) return {a: Math.min(...t), b: Math.max(...t)};
+  return null;
+}
+$('typed').oninput = () => {
+  const w = parseWindow($('typed').value);
+  $('typed').setAttribute('aria-invalid', !w && !!$('typed').value.trim());
+  if (w) setWin(w);
+};
+$('typedForm').onsubmit = e => e.preventDefault();
+function revealSky() {
+  if (reveal >= 1) return drawSky();
+  const t0 = performance.now();
+  (function frame(t) {
+    reveal = Math.min(1, (t - t0) / 1100);
+    drawSky();
+    if (reveal < 1) requestAnimationFrame(frame);
+  })(t0);
+}
+
+// ---- État général ----
+let S = null, packsKey = '';
+function renderPacks() {
+  const key = JSON.stringify([S.boosters, S.connected]);
+  if (key !== packsKey) {
+    packsKey = key;
+    $('packs').replaceChildren(...S.boosters.map(b => {
+      const input = el('input', {type: 'checkbox', role: 'switch', disabled: !S.connected});
+      input.dataset.id = b.id;
+      input.setAttribute('aria-label', 'Ouvrir automatiquement ' + b.name);
+      input.onchange = async () => {
+        const on = input.checked;
+        try { await post('api/toggle', {genre: on ? b.id : null}); }
+        catch (e) { alert(e.message); }
+        refresh();
+      };
+      const sub = b.ends_at ? `${b.sub} · jusqu'au ${time(b.ends_at)}` : b.sub;
+      const card = el('label', {className: 'pack glass'},
+        el('img', {src: `${S.origin}/kit/ui/pack_${b.theme}-160.webp`, alt: '', loading: 'lazy'}),
+        el('span', {}, el('b', {textContent: b.name}), el('small', {textContent: sub})), input);
+      card.style.setProperty('--c', THEME_COLOR[b.theme] || '#FFC83D');
+      return card;
+    }));
+  }
+  document.querySelectorAll('#packs input').forEach(i => { i.checked = i.dataset.id === S.genre; });
+}
+const stat = (label, value, extra) => el('div', {className: 'stat'}, el('small', {textContent: label}), el('b', {textContent: value}), ...(extra ? [extra] : []));
+function renderHud() {
+  const p = S.profile, kids = [];
+  if (fresh.count) kids.push(el('button', {className: 'bell', textContent: `✦ ${fresh.count.toLocaleString('fr-FR')} nouveau${fresh.count > 1 ? 'x' : ''}`, title: 'Voir les boosters ouverts depuis ta dernière visite',
+    onclick: () => { $('typed').value = ''; setWin({a: 0, b: Date.now() - fresh.since + MIN}); document.querySelector('.vault').scrollIntoView({behavior: REDUCED ? 'auto' : 'smooth'}); }}));
+  if (p) {
+    const pips = el('div', {className: 'pips'}, ...Array.from({length: p.maxStock}, (_, i) => el('i', {className: i < p.stock ? 'on' : ''})));
+    kids.push(stat('Réserve', `${p.stock}/${p.maxStock}`, pips), stat('Offerts', String(p.bonus)), stat('Pièces', p.coins.toLocaleString('fr-FR')));
+  }
+  if (p && S.mode === 'batch') kids.push(stat('Prochain lot', `${Math.min(p.stock + p.bonus, S.batchSize)}/${S.batchSize}`));
+  if (S.connected) kids.push(stat('Prochain passage', countdown(), null));
+  $('hud').replaceChildren(...kids);
+  document.title = (fresh.count ? `(${fresh.count}) ` : '') + 'Surcouche Aevyz';
+}
+function countdown() {
+  if (!S.genre) return 'En pause';
+  if (S.running) return 'En cours…';
+  if (S.quietNow) return `Pause jusqu'à ${S.quiet.to}`;
+  const left = Math.max(0, S.nextPass - Date.now()), s = Math.floor(left / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+function renderState() {
+  $('connect').hidden = S.connected;
+  $('siteLink').href = S.origin;
+  $('alert').hidden = !S.alert;
+  $('alert').textContent = S.alert || '';
+  $('logs').replaceChildren(...S.logs.map(l => el('li', {textContent: `${time(l.at)} : ${l.msg}`})));
+  document.querySelectorAll('input[name=mode]').forEach(i => { i.checked = i.value === S.mode; i.disabled = !S.connected; });
+  if (!$('quietForm').contains(document.activeElement)) { $('quietOn').checked = S.quiet.on; $('quietFrom').value = S.quiet.from; $('quietTo').value = S.quiet.to; }
+  $('quietNow').hidden = !S.quietNow;
+  renderHud();
+  renderPacks();
+}
+async function refresh() {
+  const saved = S && S.saved;
+  S = await (await fetch('api/state')).json();
+  renderState();
+  if (saved !== null && saved !== S.saved) { await visit(); loadAll(); }
+}
+document.querySelectorAll('input[name=mode]').forEach(i => {
+  i.onchange = async () => {
+    try { await post('api/mode', {mode: i.value}); }
+    catch (e) { alert(e.message); }
+    refresh();
+  };
+});
+
+$('quietForm').onchange = async () => {
+  if (!$('quietFrom').value || !$('quietTo').value) return;
+  try { await post('api/quiet', {on: $('quietOn').checked, from: $('quietFrom').value, to: $('quietTo').value}); }
+  catch (e) { alert(e.message); }
+  refresh();
+};
+$('quietForm').onsubmit = e => e.preventDefault();
+
+// ---- Boosters nouveaux : signalés à ton retour, puis effacés au bout de FRESH_MS ----
+const FRESH_MS = 20000;
+let freshT = 0;
+function clearFresh() {
+  fresh = {since: null, count: 0};
+  document.querySelectorAll('.new').forEach(e => e.remove());
+  if (S) renderHud();
+  queueSky();
+}
+async function visit() {
+  if (!document.hasFocus()) return false; // la page n'est pas regardée : rien n'est marqué comme vu
+  const r = await post('api/seen', {});
+  if (!r.count) return false;
+  fresh = {since: fresh.since ? Math.min(fresh.since, r.previous) : r.previous, count: fresh.count + r.count};
+  clearTimeout(freshT);
+  freshT = setTimeout(clearFresh, FRESH_MS);
+  return true;
+}
+async function onReturn() {
+  if (document.visibilityState === 'visible' && await visit()) { renderHud(); loadAll(); }
+}
+window.addEventListener('focus', () => onReturn().catch(() => {}));
+document.addEventListener('visibilitychange', () => onReturn().catch(() => {}));
+
+// ---- Historique ----
+let offset = 0, historySeq = 0, licKey = '', timelineSeq = 0;
+const LIMIT = 30, licSel = new Set();
+RARITIES.forEach((name, i) => {
+  const chip = el('label', {className: 'chip'}, el('input', {type: 'checkbox', value: i, onchange: () => loadAll()}), name);
+  chip.style.setProperty('--rc', RCOL[i]);
+  $('rarities').append(chip);
+});
+function renderLicences(list) {
+  const key = JSON.stringify(list);
+  if (key !== licKey) {
+    licKey = key;
+    $('licList').replaceChildren(...list.map(l => el('label', {}, el('input', {type: 'checkbox', value: l, checked: licSel.has(l), onchange: e => {
+      if (e.target.checked) licSel.add(l); else licSel.delete(l);
+      loadAll();
+    }}), l)));
+    filterLicences();
+  }
+  $('licSummary').textContent = licSel.size ? `Licences (${licSel.size} sélectionnée${licSel.size > 1 ? 's' : ''})` : 'Licences';
+}
+function filterLicences() {
+  const s = $('licSearch').value.trim().toLowerCase();
+  $('licList').querySelectorAll('label').forEach(l => { l.hidden = !l.textContent.toLowerCase().includes(s); });
+}
+function cardEl(c, zoomable = true) {
+  const rar = c.rarity ?? 0;
+  const card = el(zoomable ? 'button' : 'article', {className: `card r${rar}${rar >= 3 ? ' holo' : ''}`},
+    el('span', {className: 'art'}, c.art ? el('img', {src: c.art, alt: '', loading: 'lazy'}) : '?',
+      ...(c.first ? [el('span', {className: 'first', textContent: '✦', title: 'Obtenue pour la première fois'})] : [])),
+    el('span', {className: 'info'},
+      el('b', {textContent: c.name || 'Carte inconnue'}),
+      el('span', {className: 'rar', textContent: c.rarity == null ? 'Rareté inconnue' : RARITIES[rar]}),
+      el('small', {textContent: c.licence || ''})));
+  card.style.setProperty('--rc', RCOL[rar]);
+  if (zoomable) {
+    card.type = 'button';
+    card.setAttribute('aria-label', `Voir ${c.name || 'la carte'} en grand${c.first ? ', obtenue pour la première fois' : ''}`);
+    card.onclick = () => { $('zoom').replaceChildren(cardEl(c, false)); $('zoom').showModal(); };
+  }
+  return card;
+}
+$('zoom').onclick = e => { if (e.target === $('zoom')) $('zoom').close(); };
+// Reflet et inclinaison des cartes selon la position du curseur.
+function tilt(e) {
+  const card = e.target.closest && e.target.closest('.card');
+  if (!card || REDUCED) return;
+  const r = card.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+  const strength = card.closest('dialog') ? 14 : 9;
+  card.style.setProperty('--ry', (x - .5) * strength + 'deg');
+  card.style.setProperty('--rx', (.5 - y) * strength + 'deg');
+  card.style.setProperty('--mx', x * 100 + '%');
+  card.style.setProperty('--my', y * 100 + '%');
+}
+function untilt(e) {
+  const card = e.target.closest && e.target.closest('.card');
+  if (card) { card.style.setProperty('--rx', '0deg'); card.style.setProperty('--ry', '0deg'); }
+}
+for (const box of [$('grid'), $('zoom'), $('tradeBody'), $('pending'), $('recyList'), $('tradeHistory')]) {
+  box.addEventListener('pointermove', tilt);
+  box.addEventListener('pointerout', untilt);
+}
+function filterParams() {
+  const q = new URLSearchParams();
+  $('rarities').querySelectorAll('input:checked').forEach(i => q.append('rarity', i.value));
+  licSel.forEach(l => q.append('licence', l));
+  return q;
+}
+function openingEl(o, i) {
+  const best = Math.max(...o.cards.map(c => c.rarity ?? 0)), isNew = fresh.since && o.at > fresh.since;
+  const head = el('div', {className: 'head'},
+    el('img', {src: `${S ? S.origin : 'https://www.aevyz.com'}/kit/ui/pack_${o.theme}-160.webp`, alt: ''}),
+    el('div', {}, el('h3', {textContent: o.pack}), el('small', {textContent: `${Date.now() - o.at < MIN ? "à l'instant" : 'il y a ' + ago(Date.now() - o.at)} · ${time(o.at)}`})));
+  if (isNew) head.append(el('span', {className: 'new', textContent: 'NOUVEAU'}));
+  const row = el('article', {className: `opening glass b${best}`}, head, el('div', {className: 'grid'}, ...o.cards.map(c => cardEl(c))));
+  row.style.animationDelay = Math.min(i, 8) * 40 + 'ms';
+  return row;
+}
+async function loadHistory(more) {
+  offset = more ? offset + LIMIT : 0;
+  const q = filterParams(), now = Date.now();
+  q.set('limit', LIMIT); q.set('offset', offset);
+  if (win.b !== Infinity) q.set('from', now - win.b);
+  if (win.a > 0) q.set('to', now - win.a);
+  const seq = ++historySeq;
+  const d = await (await fetch('api/history?' + q)).json();
+  if (seq !== historySeq) return; // une réponse plus récente a déjà pris le relais
+  const rows = d.openings.map(openingEl);
+  if (more) $('grid').append(...rows);
+  else $('grid').replaceChildren(...(rows.length ? rows : [el('p', {className: 'empty glass', textContent: 'Aucun booster dans cette portion du ciel.'})]));
+  $('total').textContent = `(${plural(d.total, 'booster')})`;
+  $('more').hidden = offset + LIMIT >= d.total;
+  renderLicences(d.licences);
+}
+async function loadTimeline() {
+  const seq = ++timelineSeq;
+  const list = await (await fetch('api/timeline?' + filterParams())).json();
+  if (seq !== timelineSeq) return;
+  stars = list;
+  drawTicks();
+  renderDial();
+  revealSky();
+}
+const loadAll = () => { loadHistory(); return loadTimeline(); };
+$('licSearch').oninput = filterLicences;
+$('reset').onclick = () => {
+  $('typed').value = $('licSearch').value = '';
+  document.querySelectorAll('#rarities input,#licList input').forEach(i => { i.checked = false; });
+  licSel.clear();
+  win = {a: 0, b: Infinity};
+  saveFilters();
+  filterLicences();
+  loadAll();
+};
+$('more').onclick = () => loadHistory(true);
+$('connectForm').onsubmit = async e => {
+  e.preventDefault();
+  try { await post('api/session', {session: $('sessionInput').value}); $('sessionInput').value = ''; }
+  catch (err) { alert(err.message); }
+  refresh();
+};
+// ---- Échanges : suggestions calculées par le serveur, à la demande ----
+const getJson = async url => { const r = await fetch(url), d = await r.json(); if (!r.ok) throw new Error(d.error || 'Erreur'); return d; };
+let playerRows = null, playersTotal = 0, tradeUser = null, tradeSeq = 0, scanning = false, scanStopped = false, draft = null, tradeMsg = '';
+const TRADE_MAX = 20, TRADE_MESSAGE_MAX = 280;
+const tradeCounts = new Map(), badges = new Map(), visiblePlayers = new Set();
+const tradeMode = () => document.querySelector('input[name=tradeMode]:checked').value;
+const countKey = () => tradeMode() + ($('tradeSafe').checked ? 'Safe' : '') + ($('tradePending').checked ? 'Pending' : '');
+const cardsOf = (d, side) => d.rarities.flatMap(r => r[side]);
+function riskTag(c) {
+  if (!c.risk || c.risk.level === 'low') return [];
+  const detail = `${plural(c.risk.wishes, 'envie')} dans cette licence, ${c.risk.owned}/${c.risk.total} cartes`;
+  return [el('span', {className: `tag ${c.risk.level}`, title: detail, textContent: c.risk.level === 'high' ? `⚠ Cherche cette licence (${plural(c.risk.wishes, 'envie')})` : `Licence avancée (${c.risk.owned}/${c.risk.total})`})];
+}
+const tradeCard = (c, mine) => el('div', {}, cardEl(c),
+  el('span', {className: 'tag', textContent: c.copies > 1 ? `×${c.copies}` : mine ? 'Ton dernier exemplaire' : 'Son seul exemplaire'}), ...riskTag(c));
+function pickable(card, c, side, d) {
+  const on = draft[side].has(c.id);
+  const b = el('button', {type: 'button', className: 'ghost pick', textContent: on ? 'Retirer' : 'Ajouter', disabled: !on && draft[side].size >= TRADE_MAX, onclick: () => {
+    if (on) draft[side].delete(c.id); else draft[side].add(c.id);
+    renderTrades(d);
+  }});
+  b.setAttribute('aria-pressed', on);
+  b.setAttribute('aria-label', `${on ? 'Retirer' : 'Ajouter'} ${c.name || 'la carte'}`);
+  card.append(b);
+  return card;
+}
+const tradeSides = (give, get, d) => el('div', {className: 'sides'},
+  el('div', {}, el('h4', {textContent: 'Tu donnes'}), el('div', {className: 'tgrid'}, ...give.map(c => pickable(tradeCard(c, true), c, 'give', d)))),
+  el('div', {}, el('h4', {textContent: 'Tu reçois'}), el('div', {className: 'tgrid'}, ...get.map(c => pickable(tradeCard(c, false), c, 'get', d)))));
+function composer(d) {
+  const give = cardsOf(d, 'give').filter(c => draft.give.has(c.id)), get = cardsOf(d, 'get').filter(c => draft.get.has(c.id));
+  const balance = {};
+  give.forEach(c => { balance[c.rarity] = (balance[c.rarity] || 0) + 1; });
+  get.forEach(c => { balance[c.rarity] = (balance[c.rarity] || 0) - 1; });
+  const ready = give.length && get.length;
+  const warning = !ready ? 'Ajoute au moins une carte de chaque côté.' : Object.values(balance).some(Boolean) ? 'Les raretés ne sont plus équilibrées : tu peux envoyer, mais la proposition risque d\'être refusée.' : '';
+  const counter = el('small', {textContent: `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`});
+  const message = el('textarea', {maxLength: TRADE_MESSAGE_MAX, value: tradeMsg, placeholder: 'Message (facultatif) : Salut ! Ça te dit ?', oninput: () => { tradeMsg = message.value; counter.textContent = `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`; }});
+  message.setAttribute('aria-label', 'Message à envoyer avec la proposition');
+  const error = el('p', {className: 'xwarn', role: 'alert', hidden: true});
+  const name = d.name || 'ce joueur';
+  const send = el('button', {type: 'button', className: 'btn', disabled: !ready, textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
+    if (!confirm(`Envoyer à ${name} : ${give.length} contre ${get.length} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
+    send.disabled = true;
+    error.hidden = true;
+    try {
+      await post('api/trades/propose', {to: tradeUser, give: give.map(c => c.id), get: get.map(c => c.id), message: tradeMsg});
+    } catch (e) {
+      error.textContent = e.message;
+      error.hidden = false;
+      send.disabled = false;
+      return;
+    }
+    tradeMsg = '';
+    tradeCounts.clear();
+    renderBadges();
+    await loadTrades();
+    loadPending();
+    $('tradeBody').prepend(el('p', {className: 'xsent', role: 'status', textContent: `Proposition envoyée à ${name}.`}));
+    scanPlayers();
+  }});
+  return el('article', {className: 'glass xblock compose'},
+    el('h3', {textContent: `Ton échange : ${give.length} contre ${get.length}`}), tradeSides(give, get, d),
+    message, counter, ...(warning ? [el('p', {className: 'xwarn', textContent: warning})] : []), error, send);
+}
+function renderTrades(d) {
+  if (!d.private) draft ??= {give: new Set(d.pack.give.map(c => c.id)), get: new Set(d.pack.get.map(c => c.id))};
+  const link = el('a', {href: d.link, target: '_blank', rel: 'noreferrer', textContent: 'Ouvrir son profil sur Aevyz'});
+  if (d.private) return $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: 'Ce joueur garde sa collection privée. '}, link));
+  if (!d.rarities.length) {
+    const wishesNote = d.wishes == null ? '' : ` ${plural(d.wishes, 'envie')} de son côté.`;
+    return $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: `Aucun échange possible avec cette option.${wishesNote} `}, link));
+  }
+  $('tradeBody').replaceChildren(
+    el('p', {className: 'xnote', textContent: `Échange maximum préparé : ${d.pack.give.length} contre ${d.pack.get.length}. Ajuste les cartes ci-dessous. `}, link),
+    composer(d),
+    ...d.rarities.map(r => el('article', {className: 'glass xblock'},
+      el('h3', {textContent: `${RARITIES[r.rarity]} : jusqu'à ${r.pairs} contre ${r.pairs}`}), tradeSides(r.give, r.get, d))));
+}
+async function loadTrades() {
+  if (!tradeUser) return;
+  const seq = ++tradeSeq;
+  draft = null;
+  $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: 'Chargement…'}));
+  try {
+    const d = await getJson(`api/trades?user=${encodeURIComponent(tradeUser)}&mode=${tradeMode()}&safe=${$('tradeSafe').checked ? 1 : 0}&pending=${$('tradePending').checked ? 1 : 0}`);
+    if (seq === tradeSeq) renderTrades(d);
+  } catch (e) { if (seq === tradeSeq) $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+function paintBadge(id) {
+  const b = badges.get(id);
+  if (!b) return;
+  const n = tradeCounts.get(id)?.[countKey()] || 0;
+  b.hidden = !n;
+  b.textContent = n;
+  b.title = `Échange possible : ${n} contre ${n}`;
+  b.setAttribute('aria-label', b.title);
+}
+function showPlayersInfo(problem) {
+  if (!playerRows) return;
+  const scanned = playerRows.filter(p => tradeCounts.has(p.id)).length, possible = playerRows.filter(p => tradeCounts.get(p.id)?.[countKey()]).length;
+  $('playersInfo').textContent = `${playerRows.length} joueurs affichés sur ${playersTotal} · ${scanned} analysés · ${possible} avec un échange`
+    + (problem ? ` · analyse interrompue : ${problem}` : '');
+}
+function renderBadges() {
+  renderPlayers();
+  showPlayersInfo();
+}
+// Pastilles : toute la liste pour le tri, les joueurs visibles d'abord, un à la fois, avec une pause irrégulière après chaque lecture du jeu.
+// ponytail: jusqu'à 200 lectures à la première analyse (environ 12 min), puis le cache du serveur (6 h) ; à ralentir si Aevyz se plaint.
+async function scanPlayers() {
+  if (scanning || scanStopped) return;
+  scanning = true;
+  let failures = 0;
+  for (;;) {
+    const p = location.hash === '#echanges' && ((playerRows || []).find(x => visiblePlayers.has(x.id) && !tradeCounts.has(x.id)) || (playerRows || []).find(x => !tradeCounts.has(x.id)));
+    if (!p) break;
+    try {
+      const d = await getJson(`api/trades/counts?user=${encodeURIComponent(p.id)}`);
+      tradeCounts.set(p.id, d.counts);
+      failures = 0;
+      if (d.counts[countKey()]) renderPlayers(); else paintBadge(p.id); // un échange trouvé remonte le joueur
+      showPlayersInfo();
+      if (d.read) await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+    } catch (e) {
+      if (++failures >= 3) { scanStopped = true; showPlayersInfo(e.message); break; }
+    }
+  }
+  scanning = false;
+}
+const playerObserver = new IntersectionObserver(entries => {
+  for (const e of entries) { if (e.isIntersecting) visiblePlayers.add(e.target.dataset.player); else visiblePlayers.delete(e.target.dataset.player); }
+  scanPlayers();
+}, {root: $('playerList')});
+function renderPlayers() {
+  const q = $('playerSearch').value.trim().toLowerCase(), list = $('playerList'), top = list.scrollTop, focused = document.activeElement?.dataset?.player;
+  const hasTrade = p => tradeCounts.get(p.id)?.[countKey()] ? 1 : 0;
+  playerObserver.disconnect();
+  visiblePlayers.clear();
+  list.replaceChildren(...(playerRows || []).filter(p => (p.name || '').toLowerCase().includes(q)).sort((a, b) => hasTrade(b) - hasTrade(a)).map(p => {
+    const b = el('button', {type: 'button', onclick: () => {
+      tradeUser = p.id;
+      tradeMsg = '';
+      $('tradeTitle').textContent = p.name;
+      renderPlayers();
+      loadTrades();
+    }}, p.avatar ? el('img', {src: p.avatar, alt: '', loading: 'lazy'}) : el('i', {className: 'pav', textContent: (p.name || '?')[0].toUpperCase()}),
+      el('span', {}, el('b', {textContent: p.name || 'Joueur'}), el('small', {textContent: `#${p.pos} · ${plural(p.uniq, 'carte')} · ${activeText(p.active_at)}`})));
+    const badge = el('mark', {className: 'pbadge', hidden: true});
+    b.append(badge);
+    badges.set(p.id, badge);
+    b.dataset.player = p.id;
+    playerObserver.observe(b);
+    paintBadge(p.id);
+    b.setAttribute('aria-pressed', p.id === tradeUser);
+    return b;
+  }));
+  list.scrollTop = top;
+  if (focused) list.querySelector(`[data-player="${CSS.escape(focused)}"]`)?.focus();
+}
+async function loadPlayers() {
+  if (playerRows) return;
+  $('playersInfo').textContent = 'Chargement…';
+  try {
+    const d = await getJson('api/players');
+    playerRows = d.players;
+    playersTotal = d.total;
+    showPlayersInfo();
+    renderPlayers();
+  } catch (e) { $('playersInfo').textContent = e.message; }
+}
+$('playerSearch').oninput = renderPlayers;
+document.querySelectorAll('input[name=tradeMode], #tradeSafe, #tradePending').forEach(i => { i.onchange = () => { renderBadges(); loadTrades(); }; });
+// ---- Échanges en attente : reçus et envoyés, avec mes exemplaires de chaque carte ----
+function pendingTag(c, giving, mine) {
+  const n = c.owned;
+  // Une carte proposée quitte déjà ma collection : pour un envoi, owned = ce qu'il me reste.
+  const [cls, text] = giving
+    ? mine ? (n ? ['dupe', `Doublon : il t'en reste ${n}`] : ['high', 'Plus aucun exemplaire'])
+      : n >= 2 ? ['dupe', `Doublon ×${n}`] : n === 1 ? ['medium', 'Ton dernier exemplaire'] : ['high', 'Tu ne l\'as plus']
+    : n ? ['medium', `Tu l'as déjà ×${n}`] : ['newc', '✦ Nouvelle carte'];
+  return el('div', {}, cardEl(c), el('span', {className: `tag ${cls}`, textContent: text}));
+}
+function pendingEl(t) {
+  const dupesOut = t.give.filter(c => t.mine ? c.owned >= 1 : c.owned >= 2).length, fresh = t.get.filter(c => !c.owned).length;
+  const coins = (t.giveCoins ? ` · tu paies ${t.giveCoins} pièces` : '') + (t.getCoins ? ` · tu reçois ${t.getCoins} pièces` : '');
+  const error = el('p', {className: 'xwarn', role: 'alert', hidden: true});
+  const act = (label, cls, accept, ask) => el('button', {type: 'button', className: cls, textContent: label, onclick: async e => {
+    if (!confirm(ask)) return;
+    e.target.disabled = true;
+    try { await post('api/pending/respond', {id: t.id, accept}); }
+    catch (err) { error.textContent = err.message; error.hidden = false; e.target.disabled = false; return; }
+    tradeCounts.clear(); renderBadges(); loadPending();
+  }});
+  const who = t.name || 'ce joueur';
+  const actions = t.mine
+    ? [act('Annuler la proposition', 'ghost', false, `Annuler la proposition envoyée à ${who} ?`)]
+    : [act('Accepter', 'btn', true, `Accepter l'échange de ${who} : tu donnes ${t.give.length} carte(s) et tu en reçois ${t.get.length} ?`),
+       act('Refuser', 'ghost', false, `Refuser l'échange de ${who} ?`),
+       el('a', {href: `${S ? S.origin : 'https://www.aevyz.com'}/profil?profil=${encodeURIComponent(t.player || '')}`, target: '_blank', rel: 'noreferrer', textContent: 'Contre-proposer sur Aevyz'})];
+  return el('article', {className: 'glass xblock ptrade'},
+    el('div', {className: 'head'}, t.avatar ? el('img', {src: t.avatar, alt: ''}) : el('i', {className: 'pav', textContent: who[0].toUpperCase()}),
+      el('div', {}, el('h3', {textContent: `${t.mine ? 'À' : 'De'} ${who}`}),
+        el('small', {textContent: `il y a ${ago(Date.now() - Date.parse(t.created_at))}${t.expires_at ? ` · expire dans ${ago(Date.parse(t.expires_at) - Date.now())}` : ''}${coins}`}))),
+    ...(t.message ? [el('blockquote', {textContent: `« ${t.message} »`})] : []),
+    el('p', {className: 'xnote', textContent: `Tu donnes ${t.give.length} carte(s) dont ${plural(dupesOut, 'doublon')} · tu reçois ${t.get.length} carte(s) dont ${fresh} nouvelle(s)`}),
+    el('div', {className: 'sides'},
+      el('div', {}, el('h4', {textContent: 'Tu donnes'}), el('div', {className: 'tgrid'}, ...t.give.map(c => pendingTag(c, true, t.mine)))),
+      el('div', {}, el('h4', {textContent: 'Tu reçois'}), el('div', {className: 'tgrid'}, ...t.get.map(c => pendingTag(c, false, t.mine))))),
+    error, el('div', {className: 'acts'}, ...actions));
+}
+async function loadPending() {
+  try {
+    const list = await getJson('api/pending'), col = (title, l) => el('div', {}, el('h3', {textContent: `${title} (${l.length})`}),
+      ...(l.length ? l.map(pendingEl) : [el('p', {className: 'xnote', textContent: 'Aucun.'})]));
+    paintPending(list.filter(t => !t.mine).length);
+    $('pending').replaceChildren(el('div', {className: 'pend'}, col('Reçus', list.filter(t => !t.mine)), col('Envoyés', list.filter(t => t.mine))));
+  } catch (e) { $('pending').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+$('pendingReload').onclick = loadPending;
+function paintPending(n) {
+  document.querySelectorAll('[data-pending]').forEach(b => { b.hidden = !n; b.textContent = n; b.title = `${plural(n, 'échange reçu')} à traiter`; });
+}
+// ponytail: relu toutes les 5 min pour la pastille ; à espacer si Aevyz se plaint.
+setInterval(() => { if (S && S.connected) loadPending(); }, 5 * 60000);
+
+// ---- Historique des échanges : tout ce que renvoie le site, du plus récent au plus ancien ----
+const TRADE_STATUS = {attente: 'En attente', acceptee: 'Acceptée', refusee: 'Refusée', annulee: 'Annulée', expiree: 'Expirée'};
+let tradeHistory = null;
+// Exemplaires actuels : moi et l'autre joueur ; ✕ = plus aucun, ? = collection privée.
+const copies = n => n == null ? '?' : n ? `×${n}` : '✕';
+const historyCard = (c, who) => el('div', {}, cardEl(c),
+  el('span', {className: `tag${c.owned >= 2 ? ' dupe' : c.owned ? '' : ' high'}`, textContent: `Toi : ${copies(c.owned)}${c.owned >= 2 ? ' (doublon)' : ''}`}),
+  el('span', {className: `tag${c.theirs >= 2 ? ' dupe' : c.theirs === 0 ? ' high' : ''}`, textContent: `${who} : ${copies(c.theirs)}${c.theirs >= 2 ? ' (doublon)' : ''}`}));
+function historyEl(t) {
+  const who = t.name || 'un joueur', at = Date.parse(t.closed_at || t.created_at), cards = t.give.concat(t.get);
+  const mine = cards.filter(c => c.owned >= 2).length, his = cards.filter(c => c.theirs >= 2).length;
+  const coins = (t.giveCoins ? ` · ${t.giveCoins} pièces données` : '') + (t.getCoins ? ` · ${t.getCoins} pièces reçues` : '');
+  return el('article', {className: 'glass xblock ptrade'},
+    el('div', {className: 'head'}, t.avatar ? el('img', {src: t.avatar, alt: ''}) : el('i', {className: 'pav', textContent: who[0].toUpperCase()}),
+      el('div', {}, el('h3', {textContent: `${t.mine ? 'Envoyé à' : 'Reçu de'} ${who}`}),
+        el('small', {textContent: `${t.closed_at ? 'clos' : 'proposé'} le ${time(at)} · ${t.give.length} contre ${t.get.length}${coins}`})),
+      el('span', {className: `status ${t.status}`, textContent: TRADE_STATUS[t.status] || t.status})),
+    ...(t.message ? [el('blockquote', {textContent: `« ${t.message} »`})] : []),
+    el('p', {className: 'xnote', textContent: `Aujourd'hui : ${plural(mine, 'carte')} de l'échange en doublon chez toi, ${t.give.some(c => c.theirs == null) ? 'collection privée chez ' + who : plural(his, 'carte') + ' en doublon chez ' + who}`}),
+    el('div', {className: 'sides'},
+      el('div', {}, el('h4', {textContent: t.status === 'acceptee' ? 'Tu as donné' : 'Tu donnais'}), el('div', {className: 'tgrid'}, ...t.give.map(c => historyCard(c, who)))),
+      el('div', {}, el('h4', {textContent: t.status === 'acceptee' ? 'Tu as reçu' : 'Tu recevais'}), el('div', {className: 'tgrid'}, ...t.get.map(c => historyCard(c, who))))));
+}
+function renderTradeHistory() {
+  if (!tradeHistory) return;
+  const st = $('thStatus').value, side = $('thSide').value;
+  const list = tradeHistory.filter(t => (!st || t.status === st) && (!side || t.mine === (side === 'out')));
+  const count = s => tradeHistory.filter(t => t.status === s).length;
+  $('thTotal').textContent = `(${plural(tradeHistory.length, 'échange')} · ${count('acceptee')} acceptés · ${count('refusee')} refusés)`;
+  $('tradeHistory').replaceChildren(...(list.length ? list.map(historyEl) : [el('p', {className: 'xnote', textContent: 'Aucun échange.'})]));
+}
+async function loadTradeHistory() {
+  try {
+    tradeHistory = (await getJson('api/pending?all=1')).sort((a, b) => Date.parse(b.closed_at || b.created_at) - Date.parse(a.closed_at || a.created_at));
+    renderTradeHistory();
+  } catch (e) { $('tradeHistory').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+$('thStatus').onchange = $('thSide').onchange = renderTradeHistory;
+$('thReload').onclick = loadTradeHistory;
+
+// ---- Recyclage : on garde toujours au moins un exemplaire ----
+const REC_VALUE = [1, 1, 3, 5, 10, 50];
+let owned = null;
+const recSel = new Map(); // id → nombre d'exemplaires à recycler
+RARITIES.slice(0, 6).forEach((name, i) => {
+  const chip = el('label', {className: 'chip'}, el('input', {type: 'checkbox', value: i, onchange: renderRecycle}), name);
+  chip.style.setProperty('--rc', RCOL[i]);
+  $('rRarities').append(chip);
+});
+function recFiltered() {
+  const q = $('rSearch').value.trim().toLowerCase(), lic = $('rLicence').value, min = +$('rMin').value || 1;
+  const rar = [...$('rRarities').querySelectorAll('input:checked')].map(i => +i.value);
+  const [, desc, key] = $('rSort').value.match(/^(-?)(\w+)$/), dir = desc ? -1 : 1;
+  const val = c => key === 'value' ? (c.count - 1) * REC_VALUE[c.rarity] : c[key] ?? '';
+  return (owned || []).filter(c => c.count >= min && (!lic || c.licence === lic) && (!rar.length || rar.includes(c.rarity)) && (c.name || '').toLowerCase().includes(q))
+    .sort((a, b) => { const x = val(a), y = val(b); return dir * (typeof x === 'string' ? x.localeCompare(y, 'fr') : x - y) || (a.name || '').localeCompare(b.name || '', 'fr'); });
+}
+function renderSummary() {
+  const job = S && S.recycle, busy = !!(job && job.running), byId = new Map((owned || []).map(c => [c.id, c]));
+  const rows = [...recSel].map(([id, n]) => [byId.get(id), n]).filter(([c]) => c);
+  const cards = rows.reduce((s, [, n]) => s + n, 0), coins = rows.reduce((s, [c, n]) => s + n * REC_VALUE[c.rarity], 0);
+  $('rSel').replaceChildren(...rows.map(([c, n]) => el('li', {},
+    el('span', {textContent: c.name, title: `${c.name} · ${c.licence || ''}`, style: `color:${RCOL[c.rarity]}`}), el('b', {textContent: `×${n}`}),
+    el('button', {type: 'button', textContent: '✕', title: 'Retirer', onclick: () => { recSel.delete(c.id); renderRecycle(); }}))));
+  const perRarity = RARITIES.slice(0, 6).map((r, i) => [r, rows.filter(([c]) => c.rarity === i).reduce((s, [, n]) => s + n, 0)]).filter(x => x[1]).map(([r, n]) => `${n} ${r}`).join(', ');
+  $('rSum').textContent = busy ? `Recyclage en cours : ${job.done}/${job.total} cartes…`
+    : rows.length ? `${plural(cards, 'carte')} (${perRarity}) · environ ${coins.toLocaleString('fr-FR')} pièces` : 'Choisis des cartes à recycler.';
+  $('rGo').disabled = busy || !rows.length;
+  $('rGo').textContent = `Recycler ${cards ? plural(cards, 'carte') : ''}`;
+}
+function renderRecycle() {
+  if (!owned) return;
+  const list = recFiltered();
+  $('recyTotal').textContent = `(${plural(list.length, 'carte')} affichée${list.length > 1 ? 's' : ''})`;
+  $('recyList').replaceChildren(...list.map(c => {
+    const box = el('div', {className: recSel.has(c.id) ? 'sel-on' : ''}, cardEl(c), el('span', {className: `tag${c.count > 1 ? ' dupe' : ''}`, textContent: `×${c.count}`}));
+    const input = el('input', {type: 'number', min: 0, max: c.count - 1, value: recSel.get(c.id) || 0, disabled: c.count < 2, oninput: () => {
+      const n = Math.max(0, Math.min(c.count - 1, Math.floor(+input.value) || 0));
+      if (n) recSel.set(c.id, n); else recSel.delete(c.id);
+      box.className = n ? 'sel-on' : '';
+      renderSummary();
+    }});
+    input.setAttribute('aria-label', `Exemplaires de ${c.name} à recycler`);
+    box.append(el('label', {className: 'qty'}, 'Recycler', input, `/ ${c.count - 1}`));
+    return box;
+  }));
+  if (!list.length) $('recyList').replaceChildren(el('p', {className: 'xnote', textContent: 'Aucune carte avec ces filtres.'}));
+  renderSummary();
+}
+async function loadRecycle() {
+  try {
+    owned = await getJson('api/collection');
+    const lic = $('rLicence').value, licences = [...new Set(owned.map(c => c.licence).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
+    $('rLicence').replaceChildren(el('option', {value: '', textContent: 'Toutes'}), ...licences.map(l => el('option', {value: l, textContent: l})));
+    $('rLicence').value = licences.includes(lic) ? lic : '';
+    const have = new Map(owned.map(c => [c.id, c.count]));
+    for (const [id, n] of recSel) if (!(have.get(id) > 1)) recSel.delete(id); else recSel.set(id, Math.min(n, have.get(id) - 1));
+    renderRecycle();
+  } catch (e) { $('recyList').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+['rSearch', 'rLicence', 'rMin', 'rSort'].forEach(id => { $(id).oninput = renderRecycle; });
+$('rSelectAll').onclick = () => {
+  const keep = Math.max(1, Math.floor(+$('rKeep').value) || 1);
+  for (const c of recFiltered()) if (c.count > keep) recSel.set(c.id, c.count - keep);
+  renderRecycle();
+};
+$('rClear').onclick = () => { recSel.clear(); renderRecycle(); };
+$('rGo').onclick = async () => {
+  const items = [...recSel].map(([id, n]) => ({id, n}));
+  if (!confirm(`Recycler ${$('rGo').textContent.replace('Recycler ', '')} ? C'est définitif.`)) return;
+  $('rErr').hidden = true;
+  try { await post('api/recycle', {items}); }
+  catch (e) { $('rErr').textContent = e.message; $('rErr').hidden = false; return; }
+  recSel.clear();
+  for (;;) { // suivi du recyclage, qui se fait carte par carte côté serveur
+    await refresh().catch(() => {});
+    renderSummary();
+    if (!S.recycle || !S.recycle.running) break;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  if (S.recycle && S.recycle.error) { $('rErr').textContent = 'Arrêté : ' + S.recycle.error; $('rErr').hidden = false; }
+  await loadRecycle();
+  if (S.recycle && !S.recycle.error) $('rSum').textContent = `${plural(S.recycle.cards, 'carte')} recyclée${S.recycle.cards > 1 ? 's' : ''} · +${S.recycle.coins.toLocaleString('fr-FR')} pièces`;
+};
+
+// ---- Notifications du site : lues, jamais marquées comme lues ici ----
+async function loadNotifs() {
+  if (!S || !S.connected) return;
+  try {
+    const list = await getJson('api/notifications'), unread = list.filter(n => !n.read_at).length;
+    $('notifCount').hidden = !unread;
+    $('notifCount').textContent = unread;
+    $('notifBtn').setAttribute('aria-label', `Notifications : ${unread} non lue${unread > 1 ? 's' : ''}`);
+    $('notifList').replaceChildren(...(list.length ? list.map(n => el('li', {className: n.read_at ? '' : 'unread'},
+      el('b', {textContent: n.title || 'Notification'}), ...(n.body ? [el('span', {textContent: n.body})] : []),
+      el('small', {textContent: 'il y a ' + ago(Date.now() - Date.parse(n.created_at))}))) : [el('li', {textContent: 'Aucune notification.'})]));
+  } catch (e) { $('notifList').replaceChildren(el('li', {textContent: e.message})); }
+}
+setInterval(loadNotifs, 2 * 60000);
+document.addEventListener('click', e => { if (!$('notif').contains(e.target)) $('notif').open = false; });
+
+// ---- Statistiques : graphiques en SVG, une courbe à la fois ----
+const activeText = at => at ? 'actif il y a ' + ago(Date.now() - at) : 'activité inconnue';
+// Courbe en escalier : une valeur ne change qu'au relevé suivant. invert : 1 en haut (classement).
+function lineChart(points, {color = '#FFC83D', invert = false} = {}) {
+  const box = el('div', {className: 'chart'});
+  const pts = points.filter(p => p[1] != null);
+  if (pts.length < 2 && !(pts.length === 1 && Date.now() - pts[0][0] > 6e5)) { box.append(el('p', {className: 'xnote', textContent: pts.length ? 'Pas encore assez de relevés : la courbe se dessine au fil des passages (toutes les 5 min).' : 'Pas de donnée pour ce joueur.'})); return box; }
+  const data = pts.concat([[Date.now(), pts.at(-1)[1]]]);
+  const W = 640, H = 220, L = 44, Rr = 12, T = 12, B = 26;
+  const t0 = data[0][0], t1 = data.at(-1)[0], vals = data.map(p => p[1]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const x = t => L + (t - t0) / (t1 - t0 || 1) * (W - L - Rr);
+  const y = v => invert ? T + (v - lo) / (hi - lo) * (H - T - B) : H - B - (v - lo) / (hi - lo) * (H - T - B);
+  const svg = svgEl('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img'});
+  for (const v of [lo, (lo + hi) / 2, hi]) {
+    svg.append(svgEl('line', {class: 'grid-l', x1: L, x2: W - Rr, y1: y(v), y2: y(v)}));
+    const t = svgEl('text', {x: L - 6, y: y(v) + 4, 'text-anchor': 'end'}); t.textContent = Math.round(v).toLocaleString('fr-FR'); svg.append(t);
+  }
+  for (const f of [0, .5, 1]) {
+    const tt = t0 + f * (t1 - t0), t = svgEl('text', {x: x(tt), y: H - 6, 'text-anchor': f ? f === 1 ? 'end' : 'middle' : 'start'});
+    t.textContent = new Date(tt).toLocaleString('fr-FR', {day: 'numeric', month: 'short', ...(t1 - t0 < 2 * DAY ? {hour: '2-digit', minute: '2-digit'} : {})});
+    svg.append(t);
+  }
+  let d = `M${x(data[0][0])} ${y(data[0][1])}`;
+  for (let i = 1; i < data.length; i++) d += `H${x(data[i][0])}V${y(data[i][1])}`;
+  svg.append(svgEl('path', {class: 'line', d, stroke: color}));
+  const cross = svgEl('line', {class: 'cross', y1: T, y2: H - B, visibility: 'hidden'}), dot = svgEl('circle', {r: 4.5, fill: color, stroke: '#0B0C14', 'stroke-width': 2, visibility: 'hidden'});
+  const hit = svgEl('rect', {x: L, y: 0, width: W - L - Rr, height: H, fill: 'transparent'});
+  svg.append(cross, dot, hit);
+  const tip = el('div', {className: 'tip', hidden: true});
+  hit.onpointermove = e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W, t = t0 + (px - L) / (W - L - Rr) * (t1 - t0);
+    const p = data.filter(q => q[0] <= t).at(-1) || data[0];
+    for (const [k, v] of [['x1', px], ['x2', px]]) cross.setAttribute(k, v);
+    dot.setAttribute('cx', px); dot.setAttribute('cy', y(p[1]));
+    cross.setAttribute('visibility', 'visible'); dot.setAttribute('visibility', 'visible');
+    tip.hidden = false;
+    tip.style.left = px / W * 100 + '%'; tip.style.top = y(p[1]) / H * 100 + '%';
+    tip.textContent = `${time(t)} : ${invert ? '#' : ''}${p[1].toLocaleString('fr-FR')}`;
+  };
+  hit.onpointerleave = () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); };
+  box.append(svg, tip);
+  return box;
+}
+// Carte de graphique à onglets : une série affichée, choisie dans la pastille.
+let chartPick = {};
+function chartCard(id, title, series) {
+  const slot = el('div');
+  const show = key => { chartPick[id] = key; const s = series.find(x => x.key === key) || series[0]; slot.replaceChildren(lineChart(s.points, s)); };
+  const tabs = el('div', {className: 'modes', role: 'radiogroup', ariaLabel: title}, ...series.map(s => el('label', {},
+    el('input', {type: 'radio', name: 'chart-' + id, value: s.key, checked: s.key === (chartPick[id] || series[0].key), onchange: () => show(s.key)}), s.label)));
+  show(chartPick[id] || series[0].key);
+  return el('article', {className: 'glass chartbox'}, el('div', {className: 'xhead'}, el('h3', {textContent: title}), tabs), slot);
+}
+let statsRows = null, statsSel = null, statsSeq = 0;
+function renderStatsList() {
+  const q = $('stSearch').value.trim().toLowerCase();
+  const rows = (statsRows || []).filter(p => (p.name || '').toLowerCase().includes(q)).sort((a, b) => b.me - a.me);
+  $('stList').replaceChildren(...rows.map(p => {
+    const b = el('button', {type: 'button', onclick: () => { statsSel = p.id; renderStatsList(); loadStatsPlayer(); }},
+      p.avatar ? el('img', {src: p.avatar, alt: '', loading: 'lazy'}) : el('i', {className: 'pav', textContent: (p.name || '?')[0].toUpperCase()}),
+      el('span', {}, el('b', {textContent: (p.name || 'Joueur') + (p.me ? ' (moi)' : '')}),
+        el('small', {textContent: `${p.pos_uniq ? '#' + p.pos_uniq + ' · ' : ''}${plural(p.uniq || 0, 'unique')} · ${activeText(p.active_at)}`})));
+    b.setAttribute('aria-pressed', p.id === statsSel);
+    return b;
+  }));
+}
+async function loadStats() {
+  try {
+    statsRows = await getJson('api/stats/players');
+    statsSel ??= (statsRows.find(p => p.me) || statsRows[0] || {}).id;
+    $('stInfo').textContent = `${plural(statsRows.length, 'joueur')} suivis · classement relu toutes les 5 min`;
+    renderStatsList();
+    loadStatsPlayer();
+  } catch (e) { $('stBody').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+async function loadStatsPlayer() {
+  const p = (statsRows || []).find(x => x.id === statsSel);
+  if (!p) return $('stBody').replaceChildren(el('p', {className: 'xnote', textContent: 'Aucune donnée pour l\'instant : le premier relevé arrive quelques secondes après le démarrage.'}));
+  chartPick.rar ??= 'r4'; // Légendaire par défaut
+  const seq = ++statsSeq, d = await getJson('api/stats/player?id=' + encodeURIComponent(p.id));
+  if (seq !== statsSeq) return;
+  const col = k => d.snaps.map(s => [s.at, s[k]]);
+  const n = v => v == null ? '–' : v.toLocaleString('fr-FR');
+  $('stBody').replaceChildren(
+    el('div', {className: 'xhead'}, el('h2', {textContent: (p.name || 'Joueur') + (p.me ? ' (moi)' : '')}),
+      el('span', {className: 'xnote', style: 'margin:0', textContent: p.active_at ? `Dernière activité : ${time(p.active_at)} (il y a ${ago(Date.now() - p.active_at)})` : 'Aucune activité vue depuis le début du suivi'})),
+    el('div', {className: 'tiles'}, stat('Cartes', n(p.total)), stat('Uniques', n(p.uniq)), stat('Boosters', n(p.opened)), stat('Mythiques', n(p.mythics)),
+      stat('Classement uniques', p.pos_uniq ? '#' + p.pos_uniq : '–'), stat('Total', p.pos_total ? '#' + p.pos_total : '–'), stat('Boosters', p.pos_opened ? '#' + p.pos_opened : '–'), stat('Mythiques', p.pos_myth ? '#' + p.pos_myth : '–')),
+    chartCard('col', 'Collection', [
+      {key: 'total', label: 'Cartes totales', points: col('total')}, {key: 'uniq', label: 'Uniques', points: col('uniq')},
+      {key: 'opened', label: 'Boosters', points: col('opened')}, {key: 'mythics', label: 'Mythiques', points: col('mythics')}]),
+    d.rarity.length ? chartCard('rar', 'Cartes uniques par rareté', RARITIES.map((name, i) => ({key: 'r' + i, label: name, color: RCOL[i], points: d.rarity.map(r => [r.at, r.counts[i]])})))
+      : el('p', {className: 'xnote glass panel', textContent: p.me ? 'Raretés : premier relevé en cours.' : 'Raretés : collection pas encore lue (lecture à tour de rôle, quelques joueurs toutes les 5 min) ou privée.'}),
+    chartCard('rank', 'Place au classement', [
+      {key: 'pos_uniq', label: 'Uniques', invert: true, points: col('pos_uniq')}, {key: 'pos_total', label: 'Total', invert: true, points: col('pos_total')},
+      {key: 'pos_opened', label: 'Boosters', invert: true, points: col('pos_opened')}, {key: 'pos_myth', label: 'Mythiques', invert: true, points: col('pos_myth')}]));
+}
+$('stSearch').oninput = renderStatsList;
+let envyData = null;
+function renderEnvy() {
+  if (!envyData) return;
+  const q = $('lvSearch').value.trim().toLowerCase(), key = $('lvSort').value, ratio = l => l.cards / (l.size || 1);
+  const list = envyData.licences.filter(l => l.licence.toLowerCase().includes(q))
+    .sort((a, b) => key === 'licence' ? a.licence.localeCompare(b.licence, 'fr') : key === 'ratio' ? ratio(b) - ratio(a) : b[key] - a[key] || b.cards - a.cards);
+  const max = Math.max(1, ...envyData.licences.map(l => l.players));
+  $('lvInfo').textContent = `D'après les envies de ${plural(envyData.known, 'joueur')} lus (collections publiques, lues à tour de rôle). Les suggestions d'échange s'en servent : tu donnes d'abord les licences peu enviées et tu demandes les plus enviées.`;
+  $('lvBody').replaceChildren(...(list.length ? list.map(l => el('tr', {},
+    el('td', {textContent: l.licence}),
+    el('td', {}, el('span', {className: 'bar'}, el('i', {style: `width:${l.players / max * 120}px`}), String(l.players))),
+    el('td', {textContent: l.cards.toLocaleString('fr-FR')}), el('td', {textContent: l.size || '–'})))
+    : [el('tr', {}, el('td', {colSpan: 4, className: 'xnote', textContent: 'Aucune envie connue pour l\'instant.'}))]));
+}
+async function loadEnvy() {
+  try { envyData = await getJson('api/stats/licences'); renderEnvy(); }
+  catch (e) { $('lvInfo').textContent = e.message; }
+}
+$('lvSearch').oninput = renderEnvy;
+$('lvSort').onchange = renderEnvy;
+
+function showView() {
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#stats': 'viewStats', '#stats-licences': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
+  for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewStats']) $(id).hidden = id !== view;
+  $('subStatsPlayers').hidden = location.hash !== '#stats';
+  $('subStatsLicences').hidden = location.hash !== '#stats-licences';
+  if (location.hash === '#stats') loadStats();
+  if (location.hash === '#stats-licences') loadEnvy();
+  document.querySelectorAll('.tabs:not(.subtabs) a').forEach(a => { if ((views[a.hash] || 'viewBoosters') === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  const propose = location.hash === '#echanges', hist = location.hash === '#echanges-historique';
+  $('subPending').hidden = propose || hist;
+  $('subPropose').hidden = !propose;
+  $('subHistory').hidden = !hist;
+  if (hist) loadTradeHistory();
+  document.querySelectorAll('.subtabs a').forEach(a => { if (a.hash === location.hash) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  if (view === 'viewTrades') loadPending();
+  if (propose) { scanStopped = false; loadPlayers().then(scanPlayers); }
+  if (view === 'viewRecycle') loadRecycle();
+  document.querySelectorAll('.subtabs a').forEach(a => { if (a.hash === location.hash) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+}
+function saveFilters() {
+  try {
+    localStorage.setItem('aevyz-filters', JSON.stringify({
+      mode: tradeMode(), safe: $('tradeSafe').checked, pending: $('tradePending').checked,
+      rarities: [...$('rarities').querySelectorAll('input:checked')].map(i => i.value), licences: [...licSel],
+      a: win.a, b: win.b === Infinity ? null : win.b, typed: $('typed').value,
+    }));
+  } catch {}
+}
+function restoreFilters() {
+  try {
+    const f = JSON.parse(localStorage.getItem('aevyz-filters') || '{}');
+    document.querySelectorAll('input[name=tradeMode]').forEach(i => { if (i.value === f.mode) i.checked = true; });
+    $('tradeSafe').checked = !!f.safe;
+    $('tradePending').checked = !!f.pending;
+    $('rarities').querySelectorAll('input').forEach(i => { i.checked = (f.rarities || []).includes(i.value); });
+    (f.licences || []).forEach(l => licSel.add(l));
+    if (typeof f.a === 'number') win = {a: f.a, b: typeof f.b === 'number' ? f.b : Infinity};
+    $('typed').value = f.typed || '';
+    renderDial();
+  } catch {}
+}
+restoreFilters();
+document.addEventListener('change', saveFilters); // cases, options et licences
+window.addEventListener('hashchange', showView);
+showView();
+
+refresh().then(() => { loadNotifs(); if (S.connected && location.hash !== '#echanges-attente') loadPending(); }).then(visit).catch(() => {}).then(() => { if (S) renderHud(); return loadAll(); });
+setInterval(() => refresh().catch(() => {}), 10000);
+setInterval(() => { if (S) renderHud(); }, 1000);
+setInterval(() => { renderDial(); }, 60000); // le ciel glisse avec le temps
+</script>
+</body>
+</html>

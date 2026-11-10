@@ -1,0 +1,15 @@
+services:
+  aevyz:
+    build: .
+    restart: unless-stopped
+    environment:
+      PASSWORD: ${PASSWORD:?Définis PASSWORD dans .env}
+      TZ: ${TZ:-Europe/Paris}
+    ports:
+      # BIND = l'IP privée du serveur (ex. Tailscale). Docker contourne ufw : ne pas mettre 0.0.0.0.
+      - "${BIND:-127.0.0.1}:8787:8787"
+    volumes:
+      - aevyz-data:/data
+
+volumes:
+  aevyz-data:
