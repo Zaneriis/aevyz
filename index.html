@@ -297,8 +297,8 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .mkcond{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:5px;align-items:center}
 .mkcond select,.mkcond input,.mksel,.envy td input{min-width:0;background:#0005;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:4px 6px;font:inherit}
 .envy td input{width:90px}
-.envy tr.new td{background:#ffc83d14}
-.envy tr.new td:first-child{box-shadow:inset 3px 0 var(--accent)}
+.envy tr.fresh td{background:#ffc83d0a}
+.envy tr.fresh td:first-child{box-shadow:inset 2px 0 #ffc83d99}
 </style>
 </head>
 <body>
@@ -1559,7 +1559,7 @@ function renderBought() {
   const list = $('mkBoughtShow').value === 'all' ? mk.bought : mk.bought.slice(0, Math.max(10, fresh));
   $('mkNew').textContent = fresh ? `(${fresh} nouvea${fresh > 1 ? 'ux' : 'u'})` : '';
   const rname = id => { const r = mk.routines.find(x => x.id === id); return r ? whereText(r.where) : 'routine supprimée'; };
-  $('mkBought').replaceChildren(...(list.length ? list.map(b => el('tr', {className: isNew(b) ? 'new' : ''}, el('td', {textContent: time(b.at)}), cardTd(b.card),
+  $('mkBought').replaceChildren(...(list.length ? list.map(b => el('tr', {className: isNew(b) ? 'fresh' : ''}, el('td', {textContent: time(b.at)}), cardTd(b.card),
     el('td', {textContent: coins(b.price)}), el('td', {className: 'xnote', textContent: b.auction ? 'Enchère gagnée' : rname(b.routine)})))
     : [el('tr', {}, el('td', {colSpan: 4, className: 'xnote', textContent: 'Rien acheté pour l\'instant.'}))]));
 }
