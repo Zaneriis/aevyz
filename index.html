@@ -305,15 +305,18 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 
   <section id="connect" class="glass" hidden>
     <h2>Connecter ton compte</h2>
-    <ol>
-      <li>Ouvre une <b>fenêtre de navigation privée</b>, va sur <a id="siteLink" target="_blank" rel="noreferrer">aevyz.com</a> et connecte-toi avec Discord.</li>
-      <li>Ouvre la console (F12). Colle ceci, puis appuie sur Entrée. Si le navigateur bloque le collage, tape d'abord <code>allow pasting</code>.<br>
-        <code>copy(localStorage.getItem('sb-vmobbiulvvchbezkxeat-auth-token'))</code></li>
-      <li><b>Ferme la fenêtre privée sans te déconnecter</b> : se déconnecter annulerait la session.</li>
-      <li>Colle le contenu ici. Il donne accès à ton compte : ne le colle nulle part ailleurs.</li>
-    </ol>
+    <p><button class="btn" type="button" id="discordLogin">Se connecter avec Discord</button></p>
+    <p class="xnote">Après Discord, tu reviens ici et c'est fini. Si tu atterris plutôt sur aevyz.com, <b>copie l'adresse complète de la page</b> (elle contient <code>?code=</code>), reviens ici dans les 10 minutes et colle-la ci-dessous.</p>
     <form id="connectForm">
-      <textarea id="sessionInput" aria-label="Session Aevyz" autocomplete="off" spellcheck="false" required></textarea>
+      <textarea id="sessionInput" aria-label="Adresse de retour ou session Aevyz" placeholder="https://www.aevyz.com/?code=…" autocomplete="off" spellcheck="false" required></textarea>
+      <details class="xnote" style="margin-bottom:8px"><summary>Autre méthode (PC) : copier la session depuis la console</summary>
+        <ol>
+          <li>Ouvre une <b>fenêtre de navigation privée</b>, va sur <a id="siteLink" target="_blank" rel="noreferrer">aevyz.com</a> et connecte-toi avec Discord.</li>
+          <li>Ouvre la console (F12). Colle ceci, puis appuie sur Entrée. Si le navigateur bloque le collage, tape d'abord <code>allow pasting</code>.<br>
+            <code>copy(localStorage.getItem('sb-vmobbiulvvchbezkxeat-auth-token'))</code></li>
+          <li><b>Ferme la fenêtre privée sans te déconnecter</b> : se déconnecter annulerait la session.</li>
+          <li>Colle le contenu ici. Il donne accès à ton compte : ne le colle nulle part ailleurs.</li>
+        </ol></details>
       <button class="btn">Connecter</button>
     </form>
   </section>
@@ -933,6 +936,13 @@ $('reset').onclick = () => {
   loadAll();
 };
 $('more').onclick = () => loadHistory(true);
+$('discordLogin').onclick = () => { location.href = 'api/login?back=' + encodeURIComponent(location.origin + location.pathname); };
+// Retour de Discord directement sur la surcouche : le code est échangé tout de suite, puis retiré de l'adresse.
+if (/[?&]code=/.test(location.search)) {
+  const back = location.href;
+  history.replaceState(null, '', location.pathname + location.hash);
+  post('api/session', {session: back}).catch(err => alert(err.message)).then(() => refresh());
+}
 $('connectForm').onsubmit = async e => {
   e.preventDefault();
   try { await post('api/session', {session: $('sessionInput').value}); $('sessionInput').value = ''; }

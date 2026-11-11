@@ -36,8 +36,11 @@ const fake = http.createServer((req, res) => {
     const page = rows => { const o = +url.searchParams.get('offset') || 0, l = Math.min(+url.searchParams.get('limit') || 1000, 50); return json(rows.slice(o, o + l)); };
     if (p === '/config.js') { res.end(`window.KAIRO_CONFIG = { supabaseUrl: 'http://127.0.0.1:${FAKE}', supabaseAnonKey: 'anon' };`); return; }
     if (p === '/auth/v1/token') {
-      const { refresh_token: rt } = JSON.parse(body);
-      if (!game.refreshTokens.delete(rt)) return json({ message: 'invalid' }, 400);
+      const { refresh_token: rt, auth_code, code_verifier } = JSON.parse(body);
+      if (url.searchParams.get('grant_type') === 'pkce') {
+        const ok = auth_code === 'good' && require('node:crypto').createHash('sha256').update(code_verifier || '').digest('base64url') === game.pkce;
+        if (!ok) return json({ msg: 'invalid flow state' }, 400);
+      } else if (!game.refreshTokens.delete(rt)) return json({ message: 'invalid' }, 400);
       const next = 'rt-' + ++game.serial;
       game.refreshTokens.add(next);
       return json({ access_token: 'at-' + game.serial, refresh_token: next, expires_at: Date.now() / 1000 + 3600, user: { id: ME } });
@@ -541,6 +544,21 @@ const start = async () => {
   assert.strictEqual(m.routines[0].id, id, 'même routine après modification');
   assert.strictEqual(game.bought.length, 2, 'prix max abaissé : plus de correspondance');
   await post('/api/routines', { routines: [] });
+
+  // Connexion Discord (PKCE) : redirection vers Supabase, puis code collé ou renvoyé sur la surcouche, utilisable une seule fois.
+  assert.strictEqual((await api('/api/login?back=javascript:alert(1)')).status, 400);
+  const lr = await api('/api/login?back=' + encodeURIComponent('https://ex.org/aevyz/'), { redirect: 'manual' });
+  assert.strictEqual(lr.status, 302);
+  const loc = new URL(lr.headers.get('location'));
+  assert.strictEqual(loc.pathname, '/auth/v1/authorize');
+  assert.strictEqual(loc.searchParams.get('redirect_to'), 'https://ex.org/aevyz/');
+  assert.strictEqual(loc.searchParams.get('code_challenge_method'), 's256');
+  game.pkce = loc.searchParams.get('code_challenge');
+  assert.strictEqual((await post('/api/session', { session: 'https://www.aevyz.com/?code=mauvais' })).status, 400, 'mauvais code refusé');
+  assert.strictEqual((await state()).connected, true, 'mauvais code : session gardée');
+  assert.strictEqual((await post('/api/session', { session: 'https://www.aevyz.com/?code=good#/' })).status, 200, 'adresse avec le code acceptée');
+  assert.strictEqual((await post('/api/session', { session: 'https://www.aevyz.com/?code=good' })).status, 400, 'code à usage unique');
+  await settled();
 
   // Un mauvais collage garde la session en place.
   assert.strictEqual((await post('/api/session', { session: '{"refresh_token":"mort"}' })).status, 400);

@@ -344,11 +344,39 @@ function history(q) {
     licences: db.prepare(`SELECT DISTINCT c.licence AS l FROM opening_cards oc JOIN cards c ON c.id = oc.card_id WHERE c.licence IS NOT NULL ORDER BY 1`).all().map(r => r.l),
   };
 }
+// Connexion Discord lancée par la surcouche (PKCE) : le code revient sur la surcouche si Aevyz l'autorise,
+// sinon sur aevyz.com/?code=…, dont l'adresse se colle ici. Le code seul ne sert à rien sans le vérificateur gardé ici.
+const PKCE_MS = 10 * 60000;
+async function loginUrl(back) {
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  kvSet('pkce', { verifier, at: Date.now() });
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return `${(await config()).url}/auth/v1/authorize?provider=discord&redirect_to=${encodeURIComponent(back)}&code_challenge=${challenge}&code_challenge_method=s256`;
+}
+async function exchangeCode(code) {
+  const p = kvGet('pkce');
+  if (!p || Date.now() - p.at > PKCE_MS) throw new Error('lien expiré, relance « Se connecter avec Discord »');
+  const { url, key } = await config();
+  const res = await fetch(url + '/auth/v1/token?grant_type=pkce', {
+    method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auth_code: code, code_verifier: p.verifier }), signal: AbortSignal.timeout(30000),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || !d.refresh_token) throw new Error(d.msg || d.error_description || d.message || 'HTTP ' + res.status);
+  kvSet('pkce', null); // un code ne sert qu'une fois
+  return d.refresh_token;
+}
 async function connect(raw) {
-  let s; try { s = JSON.parse(raw); } catch { s = null; }
-  if (typeof s?.refresh_token !== 'string' || !s.refresh_token) return [400, { error: 'Ce texte ne ressemble pas à une session Aevyz.' }];
+  // Acceptés : adresse avec ?code= (connexion Discord), adresse avec #refresh_token=, ou session copiée depuis la console.
+  const code = raw.match(/[?&#]code=([^&#\s]+)/)?.[1], rt = raw.match(/[#&]refresh_token=([^&#\s]+)/)?.[1];
+  let token;
+  if (code) {
+    try { token = await exchangeCode(decodeURIComponent(code)); } catch (e) { return [400, { error: 'Connexion refusée : ' + e.message }]; }
+  } else if (rt) token = decodeURIComponent(rt);
+  else { try { token = JSON.parse(raw)?.refresh_token; } catch {} }
+  if (typeof token !== 'string' || !token) return [400, { error: 'Ce texte ne ressemble pas à une session Aevyz.' }];
   const previous = kvGet('session'), previousAlert = kvGet('alert');
-  kvSet('session', { refresh_token: s.refresh_token });
+  kvSet('session', { refresh_token: token });
   try {
     await refresh();
   } catch (e) { // un mauvais collage ne doit pas casser une session valide
@@ -761,6 +789,12 @@ const server = http.createServer(async (req, res) => {
     url.pathname = url.pathname.replace(/^\/aevyz(?=\/|$)/, '') || '/'; // publié sous /aevyz/, préfixe retiré ou non par le proxy
     if (req.method === 'GET' && url.pathname === '/') return send(200, page, 'text/html; charset=utf-8');
     if (req.method === 'GET' && url.pathname === '/api/state') return send(200, state());
+    if (req.method === 'GET' && url.pathname === '/api/login') {
+      const back = url.searchParams.get('back') || '';
+      if (!/^https?:\/\/[^\s]+$/.test(back)) return send(400, { error: 'Adresse de retour invalide' });
+      res.writeHead(302, { Location: await loginUrl(back), 'Referrer-Policy': 'no-referrer' });
+      return res.end();
+    }
     if (req.method === 'GET' && url.pathname === '/api/history') return send(200, history(url.searchParams));
     if (req.method === 'GET' && url.pathname === '/api/timeline') return send(200, timeline(url.searchParams));
     if (req.method === 'GET' && url.pathname === '/api/players') {
