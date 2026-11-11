@@ -312,6 +312,8 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .envy th[aria-sort]{color:var(--text)}
 .envy .num{text-align:right}
 .envy td.zero{color:#ffffff40}
+#dpHead th[style]{color:var(--rc);box-shadow:inset 0 -2px color-mix(in srgb,var(--rc) 70%,transparent)}
+#dpBody td[style]:not(.zero){color:color-mix(in srgb,var(--rc) 75%,#fff);font-weight:700}
 .envy tr.me td{background:#ffc83d0a}
 .envy .bar i{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);min-width:2px}
 @media(max-width:940px){.stats{grid-template-columns:minmax(0,1fr)}}
@@ -1661,7 +1663,7 @@ function renderDupes() {
   const val = (p, col) => !p.dupes ? null : col === 'total' ? p.dupes.reduce((s, d) => s + d[k], 0) : p.dupes[col][k];
   const cols = [['name', 'Joueur'], ...RARITIES.map((r, i) => [i, r]), ['total', 'Total']];
   $('dpHead').replaceChildren(...cols.map(([col, label]) => {
-    const th = el('th', {className: col === 'name' ? '' : 'num'}, el('button', {type: 'button', textContent: label + (dupSort.col === col ? (dupSort.desc ? ' ↓' : ' ↑') : ''), onclick: () => {
+    const th = el('th', {className: col === 'name' ? '' : 'num', style: typeof col === 'number' ? '--rc:' + RCOL[col] : ''}, el('button', {type: 'button', textContent: label + (dupSort.col === col ? (dupSort.desc ? ' ↓' : ' ↑') : ''), onclick: () => {
       dupSort = dupSort.col === col ? {col, desc: !dupSort.desc} : {col, desc: col !== 'name'};
       renderDupes();
     }}));
@@ -1673,7 +1675,7 @@ function renderDupes() {
     ? dir * (a.name || '').localeCompare(b.name || '', 'fr')
     : (val(a, dupSort.col) == null) - (val(b, dupSort.col) == null) || dir * (val(a, dupSort.col) - val(b, dupSort.col))); // inconnus toujours en bas
   $('dpBody').replaceChildren(...(rows.length ? rows.map(p => el('tr', {className: p.me ? 'me' : ''}, el('td', {textContent: (p.name || 'Joueur') + (p.me ? ' (toi)' : '')}),
-    ...cols.slice(1).map(([col]) => { const v = val(p, col); return el('td', {className: 'num' + (v ? '' : ' zero'), textContent: v == null ? '–' : v.toLocaleString('fr-FR')}); })))
+    ...cols.slice(1).map(([col]) => { const v = val(p, col); return el('td', {className: 'num' + (v ? '' : ' zero'), style: typeof col === 'number' ? '--rc:' + RCOL[col] : '', textContent: v == null ? '–' : v.toLocaleString('fr-FR')}); })))
     : [el('tr', {}, el('td', {colSpan: cols.length, className: 'xnote', textContent: 'Aucun joueur.'}))]));
 }
 $('dpSearch').oninput = renderDupes;
