@@ -312,6 +312,8 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .envy th[aria-sort]{color:var(--text)}
 .envy .num{text-align:right}
 .envy td.zero{color:#ffffff40}
+.reread{display:inline-flex;gap:8px;align-items:center}
+.reread .ghost{padding:4px 11px;font-size:.82rem}
 .plink{color:var(--text);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
 .plink:hover{text-decoration-color:var(--accent)}
 #dpHead th[style]{color:var(--rc);box-shadow:inset 0 -2px color-mix(in srgb,var(--rc) 70%,transparent)}
@@ -1591,13 +1593,13 @@ function lineChart(points, {color = '#FFC83D', invert = false, from = 0} = {}) {
 }
 // Carte de graphique à onglets : une série affichée, choisie dans la pastille.
 let chartPick = {};
-function chartCard(id, title, series) {
+function chartCard(id, title, series, extra) {
   const slot = el('div');
   const show = key => { chartPick[id] = key; const s = series.find(x => x.key === key) || series[0]; slot.replaceChildren(lineChart(s.points, {...s, from: statsRange && Date.now() - statsRange})); };
   const tabs = el('div', {className: 'modes', role: 'radiogroup', ariaLabel: title}, ...series.map(s => el('label', {},
     el('input', {type: 'radio', name: 'chart-' + id, value: s.key, checked: s.key === (chartPick[id] || series[0].key), onchange: () => show(s.key)}), s.label)));
   show(chartPick[id] || series[0].key);
-  return el('article', {className: 'glass chartbox'}, el('div', {className: 'xhead'}, el('h3', {textContent: title}), tabs), slot);
+  return el('article', {className: 'glass chartbox'}, el('div', {className: 'xhead'}, el('h3', {textContent: title}), ...(extra ? [extra] : []), tabs), slot);
 }
 let statsRows = null, statsSel = null, statsSeq = 0, statsRange = 0, statsData = null;
 const RANGES = [[DAY, '24 h'], [3 * DAY, '3 j'], [7 * DAY, '7 j'], [30 * DAY, '1 mois'], [0, 'Max']];
@@ -1649,6 +1651,21 @@ async function loadStatsPlayer() {
   statsData = {p, d};
   renderStatsPlayer();
 }
+// Relit tout de suite la collection du joueur (sinon : à tour de rôle, environ toutes les 3 h).
+function rereadBtn(p) {
+  const note = el('small', {className: 'xnote', style: 'margin:0', textContent: p.read_at ? `lue il y a ${ago(Date.now() - p.read_at)}` : ''});
+  const b = el('button', {type: 'button', className: 'ghost', textContent: 'Relire maintenant', onclick: async () => {
+    b.disabled = true;
+    note.textContent = 'Lecture…';
+    try {
+      await post('api/stats/refresh', {id: p.id});
+      p.read_at = Date.now();
+      await loadStatsPlayer();
+    } catch (e) { note.textContent = e.message; b.disabled = false; }
+  }});
+  b.title = 'Relit sa collection sur Aevyz et ajoute un point si ses raretés ont changé.';
+  return el('span', {className: 'reread'}, b, note);
+}
 function renderStatsPlayer() {
   if (!statsData) return;
   const {p, d} = statsData;
@@ -1664,8 +1681,8 @@ function renderStatsPlayer() {
     chartCard('col', 'Collection', [
       {key: 'total', label: 'Cartes totales', points: col('total')}, {key: 'uniq', label: 'Uniques', points: col('uniq')},
       {key: 'opened', label: 'Boosters', points: col('opened')}, {key: 'mythics', label: 'Mythiques', points: col('mythics')}]),
-    d.rarity.length ? chartCard('rar', 'Cartes uniques par rareté', RARITIES.map((name, i) => ({key: 'r' + i, label: name, color: RCOL[i], points: d.rarity.map(r => [r.at, r.counts[i]])})))
-      : el('p', {className: 'xnote glass panel', textContent: p.me ? 'Raretés : premier relevé en cours.' : 'Raretés : collection pas encore lue (lecture à tour de rôle, quelques joueurs toutes les 5 min) ou privée.'}),
+    d.rarity.length ? chartCard('rar', 'Cartes uniques par rareté', RARITIES.map((name, i) => ({key: 'r' + i, label: name, color: RCOL[i], points: d.rarity.map(r => [r.at, r.counts[i]])})), rereadBtn(p))
+      : el('p', {className: 'xnote glass panel', textContent: p.me ? 'Raretés : premier relevé en cours. ' : 'Raretés : collection pas encore lue (lecture à tour de rôle, quelques joueurs toutes les 5 min) ou privée. '}, rereadBtn(p)),
     chartCard('rank', 'Place au classement', [
       {key: 'pos_uniq', label: 'Uniques', invert: true, points: col('pos_uniq')}, {key: 'pos_total', label: 'Total', invert: true, points: col('pos_total')},
       {key: 'pos_opened', label: 'Boosters', invert: true, points: col('pos_opened')}, {key: 'pos_myth', label: 'Mythiques', invert: true, points: col('pos_myth')}]));

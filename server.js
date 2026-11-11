@@ -434,6 +434,20 @@ function saveRarity(player, cards, catalog, at) {
   const json = JSON.stringify(counts), last = db.prepare('SELECT counts FROM rar_snaps WHERE player = ? ORDER BY at DESC LIMIT 1').get(player);
   if (last?.counts !== json) db.prepare('INSERT OR REPLACE INTO rar_snaps VALUES (?, ?, ?)').run(player, at, json);
 }
+// Relit une collection (la mienne, ou celle d'un joueur avec ses envies) et enregistre ses raretés si elles ont bougé.
+async function readCollection(id, catalog = catalogMap()) {
+  if (id === kvGet('session')?.user_id) return saveRarity(id, (await selectAll('owned_cards', 'card_id,count', 'card_id')).map(r => [r.card_id, r.count]), catalog, Date.now());
+  const { theirs } = await theirsOf(id, 0);
+  if (!theirs?.private) saveRarity(id, Object.entries(theirs?.cards || {}), catalog, Date.now());
+  db.prepare('UPDATE players SET read_at = ?, wishes = ? WHERE id = ?').run(Date.now(), theirs?.private ? null : JSON.stringify(theirs?.wishes || []), id);
+  return theirs?.private;
+}
+async function refreshPlayer({ id }) {
+  if (typeof id !== 'string' || !db.prepare('SELECT 1 FROM players WHERE id = ?').get(id)) return [400, { error: 'Joueur inconnu' }];
+  if (await readCollection(id)) return [400, { error: 'Collection privée : impossible de la relire.' }];
+  envyCache = null;
+  return [200, { ok: true }];
+}
 let statsRunning = false, statsStarted = false;
 async function statsPass() {
   const me = kvGet('session')?.user_id;
@@ -463,14 +477,12 @@ async function statsPass() {
       }
     });
     const catalog = catalogMap();
-    saveRarity(me, (await selectAll('owned_cards', 'card_id,count', 'card_id')).map(r => [r.card_id, r.count]), catalog, now);
+    await readCollection(me, catalog);
     // Les autres : collection et envies, les moins récemment lus d'abord, avec une pause irrégulière entre deux lectures.
     const todo = db.prepare('SELECT id FROM players WHERE id != ? ORDER BY read_at IS NOT NULL, read_at LIMIT ?').all(me, STATS_READS);
     for (const { id } of todo) {
       try {
-        const { theirs } = await theirsOf(id, 0);
-        if (!theirs?.private) saveRarity(id, Object.entries(theirs?.cards || {}), catalog, Date.now());
-        db.prepare('UPDATE players SET read_at = ?, wishes = ? WHERE id = ?').run(Date.now(), theirs?.private ? null : JSON.stringify(theirs?.wishes || []), id);
+        await readCollection(id, catalog);
       } catch (e) { log('Stats ' + id + ' : ' + e.message); }
       await sleep(OPEN_DELAY_MS * (1 + Math.random() * 1.5));
     }
@@ -959,6 +971,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/recycle') return send(...await startRecycle(body));
       if (url.pathname === '/api/routines') return send(...saveRoutines(body.routines));
       if (url.pathname === '/api/snipes') return send(...await saveSnipe(body));
+      if (url.pathname === '/api/stats/refresh') return send(...await refreshPlayer(body));
       if (url.pathname === '/api/quiet' || url.pathname === '/api/market/quiet') { // deux pauses indépendantes : boosters et marché
         const q = { on: body.on === true, from: body.from, to: body.to }, mkt = url.pathname !== '/api/quiet';
         if (!HHMM.test(q.from) || !HHMM.test(q.to)) return send(400, { error: 'Heures attendues au format HH:MM' });

@@ -462,6 +462,13 @@ const start = async () => {
   assert.deepStrictEqual(luiStats.dupes, [[1, 1], [0, 0], [1, 1], [0, 0], [0, 0], [0, 0], [0, 0]], 'doublons par rareté : cartes en double, exemplaires en trop');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=' + ME)).json()).dupes.slice(0, 3), [[1, 2], [0, 0], [1, 1]], 'mes doublons');
   assert.deepStrictEqual((await statsOf()).find(x => x.id === 'lui').dupes, luiStats.dupes, 'doublons dans la liste des joueurs');
+  // Relecture à la demande d'une collection.
+  const readsBefore = game.tradeReads;
+  assert.strictEqual((await post('/api/stats/refresh', { id: 'lui' })).status, 200);
+  assert.strictEqual(game.tradeReads, readsBefore + 1, 'collection relue tout de suite');
+  assert.strictEqual((await post('/api/stats/refresh', { id: 'prive' })).status, 400, 'collection privée');
+  assert.strictEqual((await post('/api/stats/refresh', { id: 'inconnu' })).status, 400, 'joueur inconnu');
+  assert.strictEqual((await post('/api/stats/refresh', { id: ME })).status, 200, 'ma collection');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
   assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes du catalogue par rareté, alternatives comprises');
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [
