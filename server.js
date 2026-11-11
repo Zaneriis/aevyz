@@ -16,6 +16,7 @@ const OPEN_DELAY_MS = process.env.OPEN_DELAY_MS ? +process.env.OPEN_DELAY_MS : 2
 const REGEN_MS = 10 * 60 * 1000;
 const PAGE = 200;
 const BATCH_SIZE = 9;
+const BATCH_MARGIN_MS = 30000; // délai après l'arrivée du 9e booster
 const MODES = { each: 'à chaque booster', batch: `par lot de ${BATCH_SIZE}`, sneaky: 'sneaky' };
 // Mode sneaky : délai avant le prochain passage, d'après la courbe dessinée par Leo : [minutes, chance relative].
 const SNEAKY_CURVE = [[10, 1], [30, 0.98], [37, 0.78], [40, 0.63], [46, 0.47], [56, 0.35], [66, 0.28], [90, 0.24]];
@@ -160,19 +161,20 @@ async function openAll(genre) {
   if (!boosters().some(b => b.id === genre)) return stop('Le booster choisi n\'est plus disponible.');
   const batch = kvGet('mode') === 'batch';
   let opened = 0;
-  for (let i = 0; i < (batch ? BATCH_SIZE : 100) && kvGet('genre') === genre; i++) {
+  // Par lot : un seul appel de 9, comme le bouton ×N du site, plutôt que 9 appels d'affilée que le site freine.
+  const n = batch ? BATCH_SIZE : 1;
+  for (let i = 0; i < (batch ? 1 : 100) && kvGet('genre') === genre; i++) {
     const s0 = spent, before = await profile();
     if (before.banned) return stop('Compte suspendu' + (before.ban_reason ? ' : ' + before.ban_reason : '') + '.');
-    if (batch && i === 0 && available(before) < BATCH_SIZE) return; // le lot n'est pas complet : on attend
-    if (available(before) <= 0) break;
+    if (available(before) < n) { if (batch) return; break; } // le lot n'est pas complet : on attend
     try {
-      await sb('/rest/v1/rpc/open_booster', { method: 'POST', body: { p_genre: genre, p_count: 1, p_buy: false } });
+      await sb('/rest/v1/rpc/open_booster', { method: 'POST', body: { p_genre: genre, p_count: n, p_buy: false } });
     } catch (e) {
       if (/pièces|suspendu|plus disponible|pas encore de cartes/.test(e.message)) return stop('Aevyz a refusé l\'ouverture : ' + e.message);
       if (!/Plus de booster|Il te manque/.test(e.message)) log('Ouverture interrompue : ' + e.message);
       break;
     }
-    opened++;
+    opened += n;
     const after = await profile();
     if (after.coins < before.coins - (spent - s0)) return stop(`Solde de pièces en baisse (${before.coins} → ${after.coins}). Vérifie ton compte.`);
     await sleep(OPEN_DELAY_MS);
@@ -246,8 +248,17 @@ function sneakyDelay() {
     if (Math.random() < y0 + (y1 - y0) * (t - x0) / (x1 - x0)) return t * SNEAKY_UNIT_MS;
   }
 }
+// Par lot : instant où la réserve atteint le lot (offerts déduits), d'après le compteur du site. null si déjà atteint ou impossible.
+function batchReadyAt(p) {
+  const need = BATCH_SIZE - (p.bonus_packs || 0);
+  if (available(p) >= BATCH_SIZE || need > maxStock) return null;
+  return Date.parse(p.charges_at) + (need - (p.charges || 0)) * REGEN_MS;
+}
 function schedule() {
-  const ms = kvGet('mode') === 'sneaky' ? sneakyDelay() : INTERVAL_MIN * 60000;
+  let ms = kvGet('mode') === 'sneaky' ? sneakyDelay() : INTERVAL_MIN * 60000;
+  // 30 s après le 9e booster ; le passage régulier reste le plafond, il relit le compteur si le site a bougé entre-temps.
+  const ready = kvGet('mode') === 'batch' && lastProfile ? batchReadyAt(lastProfile) : null;
+  if (ready) ms = Math.min(ms, Math.max(0, ready - Date.now()) + BATCH_MARGIN_MS);
   nextPass = Date.now() + ms;
   clearTimeout(timer);
   timer = setTimeout(() => { due = true; schedule(); pass(); }, ms);
@@ -267,6 +278,7 @@ async function pass() {
   await step('Historique', syncHistory);
   await step('Profil', async () => { lastProfile = await profile(); });
   running = false;
+  if (kvGet('mode') === 'batch') schedule(); // le profil vient d'être relu : on vise le prochain lot
   if (!statsStarted) { statsStarted = true; statsPass(); } // premier relevé dès que le catalogue est là
   if (rerun) { rerun = false; pass(); }
 }

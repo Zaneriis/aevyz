@@ -99,13 +99,13 @@ const fake = http.createServer((req, res) => {
     if (p === '/rest/v1/rpc/open_booster') {
       const a = JSON.parse(body);
       game.calls.push(a);
-      if (game.profile.bonus_packs > 0) game.profile.bonus_packs--;
-      else if (game.profile.charges > 0) game.profile.charges--;
-      else return json({ message: 'Plus de booster' }, 400);
-      game.profile.coins -= game.coinsDropOnOpen;
-      const id = 'auto-' + game.openings.length;
-      game.openings.unshift({ id, genre: a.p_genre, cards: ['c1', 'c2', 'c3', 'alt1', 'c1'], created_at: iso(0) });
-      return json(['c1', 'c2', 'c3', 'alt1', 'c1']);
+      if (game.profile.bonus_packs + game.profile.charges < a.p_count) return json({ message: 'Plus de booster' }, 400);
+      for (let i = 0; i < a.p_count; i++) {
+        if (game.profile.bonus_packs > 0) game.profile.bonus_packs--; else game.profile.charges--;
+        game.profile.coins -= game.coinsDropOnOpen;
+        game.openings.unshift({ id: 'auto-' + game.openings.length, genre: a.p_genre, cards: ['c1', 'c2', 'c3', 'alt1', 'c1'], created_at: iso(0) });
+      }
+      return json(Array(a.p_count).fill(['c1', 'c2', 'c3', 'alt1', 'c1']).flat());
     }
     json({ message: 'route inconnue ' + p }, 404);
   });
@@ -241,13 +241,21 @@ const start = async () => {
   game.profile.charges = 9; game.profile.bonus_packs = 3;
   await post('/api/toggle', { genre: 'tous' });
   await settled();
-  assert.strictEqual(game.calls.length, 9, '12 disponibles : exactement 9 ouverts');
+  assert.deepStrictEqual(game.calls.map(c => c.p_count), [9], '12 disponibles : un seul appel de 9');
   assert.ok(game.calls.every(c => c.p_buy === false));
   assert.strictEqual(game.profile.bonus_packs + game.profile.charges, 3);
   game.calls.length = 0;
   await post('/api/toggle', { genre: 'tous' });
   await settled();
   assert.strictEqual(game.calls.length, 0, 'les 3 restants attendent le prochain lot');
+  // Prochain passage : 30 s après l'arrivée du 9e booster d'après le compteur du site (7 en réserve + 2 recharges de 10 min).
+  game.profile.charges = 7; game.profile.bonus_packs = 0; game.profile.charges_at = iso(5 * 60000);
+  await post('/api/toggle', { genre: 'tous' });
+  await settled();
+  assert.strictEqual(game.calls.length, 0);
+  const wait = (await state()).nextPass - Date.now();
+  assert.ok(Math.abs(wait - (15 * 60000 + 30000)) < 5000, 'passage visé 15 min 30 plus tard, pas ' + Math.round(wait / 1000) + ' s');
+  game.profile.charges = 2; game.profile.bonus_packs = 1; game.profile.charges_at = iso(0);
   await post('/api/mode', { mode: 'each' });
   await settled();
   assert.strictEqual(game.calls.length, 3, 'retour au mode normal : tout est ouvert');
