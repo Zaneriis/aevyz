@@ -469,6 +469,7 @@ const start = async () => {
   assert.strictEqual((await (await api('/api/stats/player?id=lui')).json()).snaps.length, 3, 'un relevé par changement');
   assert.strictEqual((await (await api('/api/stats/player?id=prive')).json()).snaps.length, snapsBefore, 'rien de nouveau : pas de relevé');
   assert.ok((await (await api('/api/players')).json()).players.find(x => x.id === 'lui').active_at > 0, 'activité dans la liste des échanges');
+  assert.ok((await (await api('/api/pending')).json()).find(t => t.player === 'lui').active_at > 0, 'activité sur les échanges en attente');
   assert.strictEqual((await (await api('/api/notifications')).json())[0].title, 'Échange reçu');
   env.STATS_READS = '0';
 

@@ -611,9 +611,10 @@ async function pendingTrades(all = false) {
   }
   const card = (id, his) => ({ id, name: null, licence: null, rarity: null, art: null, ...catalog.get(id), owned: have.get(id) || 0,
     ...(all && { theirs: his ? his[id] || 0 : null }) });
+  const act = activity();
   return trades.map(t => { const his = others.get(t.mine ? t.to : t.from); return {
     id: t.id, mine: !!t.mine, status: t.status, closed_at: t.closed_at, message: t.message || '', created_at: t.created_at, expires_at: t.expires_at,
-    name: t.mine ? t.to_name : t.from_name, avatar: t.mine ? t.to_av : t.from_av, player: t.mine ? t.to : t.from,
+    name: t.mine ? t.to_name : t.from_name, avatar: t.mine ? t.to_av : t.from_av, player: t.mine ? t.to : t.from, active_at: act.get(t.mine ? t.to : t.from) ?? null,
     give: ((t.mine ? t.give : t.get) || []).map(id => card(id, his)), get: ((t.mine ? t.get : t.give) || []).map(id => card(id, his)),
     giveCoins: (t.mine ? t.give_coins : t.get_coins) || 0, getCoins: (t.mine ? t.get_coins : t.give_coins) || 0,
   }; });
