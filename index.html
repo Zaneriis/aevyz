@@ -615,6 +615,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
     <section id="subStatsMissing">
       <div class="xhead"><h2>Ce qu'ils ont et que <span id="msWho">tu n'as</span> pas</h2>
         <div class="xfilters"><select id="msRef" aria-label="Joueur de référence" class="mksel"></select>
+          <label class="xsafe" title="Ne compte que les cartes qu'il a en au moins 2 exemplaires : celles qu'il peut céder sans perdre la carte."><input type="checkbox" id="msDupes">Seulement ses doublons</label>
           <input type="search" id="msSearch" placeholder="Chercher un joueur" aria-label="Chercher un joueur" style="width:auto"></div></div>
       <p class="xnote">Pour chaque joueur : ses cartes, par rareté, que le joueur choisi n'a pas, d'après les dernières lectures (ta collection toutes les 5 min, les autres à tour de rôle). « – » : collection privée ou pas encore lue. Clique sur une colonne pour trier.</p>
       <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr id="msHead"></tr></thead><tbody id="msBody"></tbody></table></div>
@@ -1741,7 +1742,7 @@ async function loadMissing() {
     $('msRef').replaceChildren(...statsRows.map(p => el('option', {value: p.id, textContent: (p.name || 'Joueur') + (p.me ? ' (toi)' : ''), selected: p.id === msRef})));
     const ref = statsRows.find(p => p.id === msRef);
     $('msWho').textContent = !ref || ref.me ? "tu n'as" : (ref.name || 'Joueur') + " n'a";
-    msData = await getJson('api/stats/missing?id=' + encodeURIComponent(msRef));
+    msData = await getJson('api/stats/missing?id=' + encodeURIComponent(msRef) + ($('msDupes').checked ? '&dupes=1' : ''));
     renderMissing();
   } catch (e) { msData = null; $('msHead').replaceChildren(); $('msBody').replaceChildren(el('tr', {}, el('td', {colSpan: 10, className: 'xnote', textContent: e.message}))); }
 }
@@ -1758,6 +1759,7 @@ function renderMissing() {
   }});
 }
 $('msSearch').oninput = renderMissing;
+$('msDupes').onchange = loadMissing;
 $('msRef').onchange = () => { msRef = $('msRef').value; loadMissing(); };
 $('dpSearch').oninput = renderDupes;
 $('dpCount').onchange = renderDupes;

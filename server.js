@@ -431,7 +431,7 @@ function saveRarity(player, cards, catalog, at) {
     if (n > 0 && r != null) counts[r]++; // cartes uniques par rareté, comme le profil du site
     if (n > 1 && r != null) { dupes[r][0]++; dupes[r][1] += n - 1; }
   }
-  db.prepare('UPDATE players SET dupes = ?, cards = ? WHERE id = ?').run(JSON.stringify(dupes), JSON.stringify(cards.filter(([, n]) => n > 0).map(([id]) => id)), player);
+  db.prepare('UPDATE players SET dupes = ?, cards = ? WHERE id = ?').run(JSON.stringify(dupes), JSON.stringify(Object.fromEntries(cards.filter(([, n]) => n > 0))), player);
   const json = JSON.stringify(counts), last = db.prepare('SELECT counts FROM rar_snaps WHERE player = ? ORDER BY at DESC LIMIT 1').get(player);
   if (last?.counts !== json) db.prepare('INSERT OR REPLACE INTO rar_snaps VALUES (?, ?, ?)').run(player, at, json);
 }
@@ -512,14 +512,14 @@ function statsPlayer(id) {
   };
 }
 // Pour chaque joueur : nombre de cartes par rareté qu'il possède et que le joueur de référence n'a pas (dernières lectures).
-function missingFor(ref) {
+function missingFor(ref, onlyDupes) {
   const own = db.prepare('SELECT cards FROM players WHERE id = ?').get(ref)?.cards;
   if (!own) return [400, { error: 'Collection de ce joueur pas encore lue, ou privée.' }];
-  const have = new Set(JSON.parse(own)), catalog = catalogMap(), out = {};
+  const have = JSON.parse(own), catalog = catalogMap(), out = {};
   for (const p of db.prepare('SELECT id, cards FROM players').all()) {
     if (!p.cards) { out[p.id] = null; continue; }
     const counts = out[p.id] = [0, 0, 0, 0, 0, 0, 0];
-    for (const id of JSON.parse(p.cards)) { const r = catalog.get(id)?.rarity; if (r != null && !have.has(id)) counts[r]++; }
+    for (const [id, n] of Object.entries(JSON.parse(p.cards))) { const r = catalog.get(id)?.rarity; if (r != null && !have[id] && (!onlyDupes || n > 1)) counts[r]++; }
   }
   return [200, out];
 }
@@ -949,7 +949,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/stats/players') return send(200, statsPlayers());
     if (req.method === 'GET' && url.pathname === '/api/stats/player') return send(200, statsPlayer(url.searchParams.get('id') || ''));
     if (req.method === 'GET' && url.pathname === '/api/stats/licences') return send(200, licenceEnvy());
-    if (req.method === 'GET' && url.pathname === '/api/stats/missing') return send(...missingFor(url.searchParams.get('id') || ''));
+    if (req.method === 'GET' && url.pathname === '/api/stats/missing') return send(...missingFor(url.searchParams.get('id') || '', url.searchParams.get('dupes') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/notifications')
       return send(200, await sb('/rest/v1/notifications?select=id,kind,title,body,link,read_at,created_at&order=created_at.desc&limit=40'));
     if (req.method === 'GET' && url.pathname === '/api/trades') {
