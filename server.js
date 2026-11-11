@@ -586,9 +586,30 @@ function tradeCounts(data) {
   }
   return { counts, read: data.read };
 }
+// Échange manuel : toutes les cartes des deux côtés, avec la cote du site pour la jauge de valeur.
+// Valeur = cote de référence du marché, sinon le prix moyen par rareté du site (MK_BASE).
+const BASE_VALUE = [5, 20, 40, 75, 175, 1200, 1200]; // ponytail: Mythique Alternative comptée comme une Mythique, le site n'a pas de prix pour elle
+let cotesCache = null;
+async function cotes() {
+  if (!cotesCache || Date.now() - cotesCache.at >= MARKET_CACHE_MS) cotesCache = { at: Date.now(), value: await sb('/rest/v1/rpc/market_cotes', { method: 'POST', body: {} }) || {} };
+  return cotesCache.value;
+}
+async function manualTrade(user) {
+  const [{ owned, wishes, incoming, outgoing, theirs }, k] = await Promise.all([tradeData(user), cotes()]);
+  const catalog = catalogMap(), his = theirs?.private ? null : theirs?.cards || {}, hisWishes = new Set(his ? theirs.wishes || [] : []);
+  // Collection privée : on peut demander n'importe quelle carte du catalogue, comme sur le site.
+  const ids = his ? new Set([...owned.keys(), ...Object.keys(his)]) : catalog.keys(), cards = [];
+  for (const id of ids) {
+    const c = catalog.get(id), mine = owned.get(id) || 0, their = his ? his[id] || 0 : null;
+    if (c && (mine || their !== 0)) cards.push({ ...c, mine, theirs: their, myWish: wishes.has(id), theirWish: hisWishes.has(id),
+      pendingOut: outgoing.has(id), pendingIn: incoming.has(id), value: k[id]?.[0] || BASE_VALUE[c.rarity] || BASE_VALUE[0] });
+  }
+  return { private: !!theirs?.private, name: theirs?.username, cards };
+}
 async function proposeTrade({ to, give, get, message = '' }) {
-  const validCards = l => Array.isArray(l) && l.length >= 1 && l.length <= TRADE_MAX && l.every(id => typeof id === 'string' && id) && new Set(l).size === l.length;
-  if (typeof to !== 'string' || !to || !validCards(give) || !validCards(get)) return [400, { error: `Il faut de 1 à ${TRADE_MAX} cartes différentes de chaque côté.` }];
+  // Une même carte peut revenir plusieurs fois (plusieurs exemplaires), comme sur le site, qui vérifie les exemplaires.
+  const validCards = l => Array.isArray(l) && l.length >= 1 && l.length <= TRADE_MAX && l.every(id => typeof id === 'string' && id);
+  if (typeof to !== 'string' || !to || !validCards(give) || !validCards(get)) return [400, { error: `Il faut de 1 à ${TRADE_MAX} cartes de chaque côté.` }];
   if (typeof message !== 'string' || message.trim().length > TRADE_MESSAGE_MAX) return [400, { error: `Message limité à ${TRADE_MESSAGE_MAX} caractères.` }];
   // Les pièces restent toujours à zéro : la surcouche n'en dépense jamais.
   const id = await sb('/rest/v1/rpc/trade_propose', { method: 'POST', body: { p_to: to, p_give: give, p_get: get, p_give_coins: 0, p_get_coins: 0, p_message: message.trim() } });
@@ -905,6 +926,11 @@ const server = http.createServer(async (req, res) => {
       const user = url.searchParams.get('user'), mode = url.searchParams.get('mode');
       if (!user || !Object.hasOwn(TRADE_MODES, mode)) return send(400, { error: 'Joueur ou option invalide' });
       return send(200, tradeOffers(await tradeData(user), mode, `${ORIGIN}/profil?profil=${encodeURIComponent(user)}`, { safe: url.searchParams.get('safe') === '1', pending: url.searchParams.get('pending') === '1' }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/trades/manual') {
+      const user = url.searchParams.get('user');
+      if (!user) return send(400, { error: 'Joueur invalide' });
+      return send(200, await manualTrade(user));
     }
     if (req.method === 'GET' && url.pathname === '/api/trades/counts') {
       const user = url.searchParams.get('user');

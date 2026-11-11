@@ -213,6 +213,39 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .xwarn{color:#ffc83d;font-size:.85rem;margin:0 0 10px}
 .xsent{color:#7be08f;font-weight:800;margin:0 0 14px}
 .tag.dupe{color:#7be08f;font-weight:800}
+/* Échange manuel */
+.xfilters:has(input[value=manual]:checked) .xsafe:has(#tradeSafe){display:none}
+.mtrays{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:12px}
+.mtrays h4{margin:0 0 8px;color:var(--muted);font-size:.85rem}
+.mslots{display:flex;flex-wrap:wrap;gap:6px;min-height:64px;align-items:center}
+.mslots .xnote{margin:0;font-size:.82rem}
+.mslot{position:relative;width:46px;height:64px;padding:0;border-radius:8px;overflow:hidden;border:2px solid var(--rc);background:var(--glass);cursor:pointer;font:inherit;font-size:.6rem;color:var(--text)}
+.mslot img{width:100%;height:100%;object-fit:cover;display:block}
+.mslot i{position:absolute;inset:0;display:grid;place-items:center;background:#000b;font-style:normal;font-size:1rem;opacity:0;transition:opacity .15s}
+.mslot:hover i,.mslot:focus-visible i{opacity:1}
+.gauge{display:flex;flex-direction:column;gap:6px;margin:4px 0 12px}
+.gbar{height:8px;border-radius:999px;background:#f0566b55;overflow:hidden}
+.gbar i{display:block;height:100%;border-radius:999px;background:#7be08f}
+.glab{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.8rem;color:var(--muted)}
+.glab b{color:var(--text)}
+.glab b.win{color:#7be08f}
+.glab b.lose{color:#ff8a98}
+.mtabs{display:flex;gap:6px;margin:4px 0 10px}
+.mtab{padding:6px 14px;border-radius:10px;border:1px solid var(--line);color:var(--muted);background:none;cursor:pointer;font:inherit}
+.mtab[aria-selected=true]{background:var(--glass2);color:var(--text);font-weight:800}
+.mtab small{font-weight:400;opacity:.75}
+.mfilters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.mfilters input[type=search]{width:auto;flex:1 1 220px}
+.mchips{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%}
+.mchip{border:1px solid var(--line);border-radius:999px;padding:3px 11px;font:inherit;font-size:.82rem;color:var(--muted);background:none;cursor:pointer}
+.mchip small{opacity:.7;margin-left:4px}
+.mchip[aria-pressed=true]{background:var(--glass2);color:var(--text);border-color:#ffc83d88}
+.mcard.on .card{outline:2px solid var(--accent);outline-offset:2px}
+.mpick{display:flex;gap:6px;align-items:center;margin-top:6px}
+.mpick .pick{margin:0;width:auto;flex:1}
+.mpick b{font-size:.8rem}
+#manGrid{margin-bottom:16px}
+@media(max-width:640px){.mtrays{grid-template-columns:minmax(0,1fr)}}
 .tag.newc{color:var(--accent);font-weight:800}
 .status{margin-left:auto;padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:800;background:var(--glass2)}
 .status.acceptee{background:#7be08f;color:#14151B}.status.refusee{background:var(--danger);color:#14151B}.status.attente{background:var(--accent);color:#14151B}
@@ -438,6 +471,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
               <label><input type="radio" name="tradeMode" value="mine">Mes doublons</label>
               <label><input type="radio" name="tradeMode" value="both">Doublons des deux</label>
               <label title="Ignore les envies des deux joueurs et ne garde que les cartes possédées au moins en double par chacun."><input type="radio" name="tradeMode" value="dupes">Doublons sans envies</label>
+              <label title="Choisis toi-même les cartes des deux côtés, avec les filtres et la jauge de valeur du site."><input type="radio" name="tradeMode" value="manual">Manuel</label>
             </div>
             <label class="xsafe" title="Écarte ses seuls exemplaires dans une licence où ce joueur a des envies. Ses doublons restent proposés."><input type="checkbox" id="tradeSafe">Sans les licences recherchées (sauf doublons)</label>
             <label class="xsafe" title="Masque les cartes déjà engagées dans un échange en attente, envoyé ou reçu : de « Tu reçois » celles que tu recevrais, de « Tu donnes » celles que tu donnerais. Tes envies sur Aevyz ne changent pas."><input type="checkbox" id="tradePending">Sans les cartes déjà en attente</label>
@@ -979,7 +1013,7 @@ let playerRows = null, playersTotal = 0, tradeUser = null, tradeSeq = 0, scannin
 const TRADE_MAX = 20, TRADE_MESSAGE_MAX = 280;
 const tradeCounts = new Map(), badges = new Map(), visiblePlayers = new Set();
 const tradeMode = () => document.querySelector('input[name=tradeMode]:checked').value;
-const countKey = () => tradeMode() + ($('tradeSafe').checked ? 'Safe' : '') + ($('tradePending').checked ? 'Pending' : '');
+const countKey = () => (tradeMode() === 'manual' ? 'classic' : tradeMode()) + ($('tradeSafe').checked ? 'Safe' : '') + ($('tradePending').checked ? 'Pending' : '');
 const cardsOf = (d, side) => d.rarities.flatMap(r => r[side]);
 function riskTag(c) {
   if (!c.risk || c.risk.level === 'low') return [];
@@ -1009,17 +1043,23 @@ function composer(d) {
   get.forEach(c => { balance[c.rarity] = (balance[c.rarity] || 0) - 1; });
   const ready = give.length && get.length;
   const warning = !ready ? 'Ajoute au moins une carte de chaque côté.' : Object.values(balance).some(Boolean) ? 'Les raretés ne sont plus équilibrées : tu peux envoyer, mais la proposition risque d\'être refusée.' : '';
+  return el('article', {className: 'glass xblock compose'},
+    el('h3', {textContent: `Ton échange : ${give.length} contre ${get.length}`}), tradeSides(give, get, d),
+    ...sendParts(give.map(c => c.id), get.map(c => c.id), d.name, warning));
+}
+// Message, avertissement et bouton d'envoi ; give et get sont des listes d'identifiants (une carte peut revenir plusieurs fois).
+function sendParts(give, get, who, warning) {
   const counter = el('small', {textContent: `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`});
   const message = el('textarea', {maxLength: TRADE_MESSAGE_MAX, value: tradeMsg, placeholder: 'Message (facultatif) : Salut ! Ça te dit ?', oninput: () => { tradeMsg = message.value; counter.textContent = `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`; }});
   message.setAttribute('aria-label', 'Message à envoyer avec la proposition');
   const error = el('p', {className: 'xwarn', role: 'alert', hidden: true});
-  const name = d.name || 'ce joueur';
-  const send = el('button', {type: 'button', className: 'btn', disabled: !ready, textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
+  const name = who || 'ce joueur';
+  const send = el('button', {type: 'button', className: 'btn', disabled: !(give.length && get.length), textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
     if (!confirm(`Envoyer à ${name} : ${give.length} contre ${get.length} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
     send.disabled = true;
     error.hidden = true;
     try {
-      await post('api/trades/propose', {to: tradeUser, give: give.map(c => c.id), get: get.map(c => c.id), message: tradeMsg});
+      await post('api/trades/propose', {to: tradeUser, give, get, message: tradeMsg});
     } catch (e) {
       error.textContent = e.message;
       error.hidden = false;
@@ -1027,6 +1067,7 @@ function composer(d) {
       return;
     }
     tradeMsg = '';
+    man = null;
     tradeCounts.clear();
     renderBadges();
     await loadTrades();
@@ -1034,9 +1075,127 @@ function composer(d) {
     $('tradeBody').prepend(el('p', {className: 'xsent', role: 'status', textContent: `Proposition envoyée à ${name}.`}));
     scanPlayers();
   }});
-  return el('article', {className: 'glass xblock compose'},
-    el('h3', {textContent: `Ton échange : ${give.length} contre ${get.length}`}), tradeSides(give, get, d),
-    message, counter, ...(warning ? [el('p', {className: 'xwarn', textContent: warning})] : []), error, send);
+  return [message, counter, ...(warning ? [el('p', {className: 'xwarn', textContent: warning})] : []), error, send];
+}
+// ---- Échange manuel : je choisis les cartes des deux côtés, avec les filtres et la jauge de valeur du site ----
+let man = null;
+const norm = s => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const manVal = l => l.reduce((s, id) => s + man.byId.get(id).value, 0);
+async function loadManual(seq) {
+  if (man?.user !== tradeUser) man = {user: tradeUser, give: [], get: [], tab: 'theirs', f: null, q: '', rar: '', lic: '', lim: 60};
+  const d = await getJson(`api/trades/manual?user=${encodeURIComponent(tradeUser)}`);
+  if (seq !== tradeSeq) return;
+  Object.assign(man, {d, byId: new Map(d.cards.map(c => [c.id, c]))});
+  renderManual();
+}
+// Filtres cumulables, comme sur le site ; le dernier (« Toutes ») les enlève.
+function manFilters() {
+  const {d, tab} = man;
+  if (tab === 'mine') return [['wish', 'Ses envies', c => c.theirWish], ['dup', 'Mes doublons', c => c.mine > 1], ['miss', 'Qu\'il n\'a pas', c => c.theirs === 0], ['all', 'Toutes', () => true]]
+    .filter(x => x[0] === 'wish' ? d.cards.some(c => c.theirWish) : x[0] !== 'miss' || !d.private);
+  return d.private ? [['need', 'Qui me manquent', c => !c.mine], ['wish', 'Mes envies', c => c.myWish], ['all', 'Tout le catalogue', () => true]]
+    : [['wish', 'Mes envies', c => c.myWish], ['need', 'Qui me manquent', c => !c.mine], ['dup', 'Ses doublons', c => c.theirs > 1], ['all', 'Toutes', () => true]];
+}
+// En plus du site : « Sans les cartes déjà en attente » écarte celles que je donnerais ou recevrais déjà dans un échange en attente.
+const manPool = () => man.d.cards.filter(c => (man.tab === 'mine' ? c.mine > 0 : c.theirs !== 0)
+  && !($('tradePending').checked && (man.tab === 'mine' ? c.pendingOut : c.pendingIn)));
+const manOn = fl => { const s = fl.filter(x => man.f.includes(x[0]) && x[0] !== 'all'); return s.length ? s : [fl[fl.length - 1]]; };
+function manList() {
+  const on = manOn(manFilters()), t = norm(man.q.trim());
+  return manPool().filter(c => on.every(f => f[2](c)) && (!t || norm(`${c.name} ${c.licence}`).includes(t)) && (man.rar === '' || c.rarity === +man.rar) && (!man.lic || c.licence === man.lic))
+    .sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr'));
+}
+// Jauge du site : valeur = cote du marché, sinon prix moyen de la rareté ; équilibré à 6 % près (5 pièces au moins).
+function gauge(a, b) {
+  const tot = a + b || 1, d = b - a;
+  const [text, cls] = Math.abs(d) <= Math.max(5, tot * .06) ? ['Échange équilibré', ''] : d > 0 ? [`Avantageux pour toi · +${coins(d)}`, 'win'] : [`Tu perds environ ${coins(-d)}`, 'lose'];
+  const bar = el('div', {className: 'gbar'}, el('i', {style: `width:${Math.round(b / tot * 100)}%`}));
+  bar.setAttribute('aria-hidden', 'true');
+  return el('div', {className: 'gauge'}, bar,
+    el('div', {className: 'glab'}, el('span', {textContent: `Tu donnes ≈ ${coins(a)}`}), el('b', {className: cls, textContent: text}), el('span', {textContent: `Tu reçois ≈ ${coins(b)}`})));
+}
+function paintManTop() {
+  const tray = side => el('div', {}, el('h4', {textContent: `${side === 'give' ? 'Tu donnes' : 'Tu reçois'} · ${man[side].length}/${TRADE_MAX}`}),
+    el('div', {className: 'mslots'}, ...(man[side].length ? man[side].map((id, i) => {
+      const c = man.byId.get(id), b = el('button', {type: 'button', className: 'mslot', title: `Retirer ${c.name}`, onclick: () => { man[side].splice(i, 1); paintManTop(); paintManGrid(); }},
+        c.art ? el('img', {src: c.art, alt: ''}) : el('span', {textContent: c.name}), el('i', {textContent: '✕'}));
+      b.style.setProperty('--rc', RCOL[c.rarity ?? 0]);
+      b.setAttribute('aria-label', `Retirer ${c.name}`);
+      return b;
+    }) : [el('span', {className: 'xnote', textContent: side === 'give' ? 'Choisis dans « Mes cartes ».' : `Choisis dans « ${man.d.private ? 'Cartes à demander' : 'Ses cartes'} ».`})])));
+  const ready = man.give.length && man.get.length;
+  $('manTop').replaceChildren(el('div', {className: 'mtrays'}, tray('give'), tray('get')), gauge(manVal(man.give), manVal(man.get)),
+    ...sendParts(man.give, man.get, man.d.name, ready ? '' : 'Ajoute au moins une carte de chaque côté.'));
+}
+function paintManChips() {
+  const fl = manFilters(), pool = manPool(), on = manOn(fl);
+  $('manChips').replaceChildren(...fl.map(x => {
+    const use = x[0] === 'all' ? [x] : on.filter(s => s[0] !== x[0] && s[0] !== 'all').concat([x]);
+    const b = el('button', {type: 'button', className: 'mchip', textContent: x[1], onclick: () => {
+      const a = x[0] === 'all' ? [] : man.f.includes(x[0]) ? man.f.filter(k => k !== x[0] && k !== 'all') : man.f.filter(k => k !== 'all').concat(x[0]);
+      man.f = a.length ? a : ['all'];
+      man.lim = 60;
+      paintManChips();
+      paintManGrid();
+    }}, el('small', {textContent: pool.filter(c => use.every(f => f[2](c))).length}));
+    b.setAttribute('aria-pressed', on.includes(x));
+    return b;
+  }));
+}
+function paintManGrid() {
+  const list = manList(), side = man.tab === 'mine' ? 'give' : 'get', who = man.d.name || 'ce joueur';
+  $('manGrid').replaceChildren(list.length ? el('div', {className: 'tgrid'}, ...list.slice(0, man.lim).map(c => {
+    const n = man[side].filter(x => x === c.id).length, have = man.tab === 'mine' ? c.mine : c.theirs ?? 9; // collection privée : jusqu'à 9, comme le site
+    const can = have - n > 0 && man[side].length < TRADE_MAX;
+    const tags = man.tab === 'mine'
+      ? [`×${c.mine} chez toi`, c.theirWish && '♥ son envie', c.theirs === 0 && 'il ne l\'a pas', c.pendingOut && 'déjà en attente']
+      : [c.theirs != null && `×${c.theirs} chez ${who}`, c.myWish && '♥ ton envie', !c.mine && 'te manque', c.pendingIn && 'déjà en attente'];
+    const add = el('button', {type: 'button', className: 'ghost pick', textContent: n ? '+' : 'Ajouter', disabled: !can, onclick: () => { man[side].push(c.id); paintManTop(); paintManGrid(); }});
+    add.setAttribute('aria-label', `Ajouter ${c.name}`);
+    const rm = el('button', {type: 'button', className: 'ghost pick', textContent: '−', onclick: () => { man[side].splice(man[side].lastIndexOf(c.id), 1); paintManTop(); paintManGrid(); }});
+    rm.setAttribute('aria-label', `Retirer ${c.name}`);
+    return el('div', {className: `mcard${n ? ' on' : ''}`}, cardEl(c),
+      ...tags.filter(Boolean).map(t => el('span', {className: `tag${t.startsWith('♥') ? ' dupe' : t === 'déjà en attente' ? ' medium' : ''}`, textContent: t})),
+      el('span', {className: 'tag', textContent: `≈ ${coins(c.value)} pièces`}),
+      el('div', {className: 'mpick'}, ...(n ? [rm, el('b', {textContent: `×${n}`})] : []), add));
+  })) : el('p', {className: 'xnote', textContent: 'Aucune carte ici. Essaie un autre filtre.'}),
+  ...(list.length > man.lim ? [el('button', {type: 'button', className: 'ghost more', textContent: `Voir plus · ${list.length - man.lim}`, onclick: () => { man.lim += 120; paintManGrid(); }})] : []));
+}
+function renderManual() {
+  const {d} = man;
+  if (!man.f) { const fl = manFilters(), pool = manPool(); man.f = [(fl.find(x => pool.some(x[2])) || fl[fl.length - 1])[0]]; }
+  const tab = (key, label, n) => {
+    const b = el('button', {type: 'button', role: 'tab', className: 'mtab', textContent: label + ' ', onclick: () => {
+      if (man.tab === key) return;
+      Object.assign(man, {tab: key, f: null, q: '', rar: '', lic: '', lim: 60});
+      renderManual();
+    }}, el('small', {textContent: n}));
+    b.setAttribute('aria-selected', man.tab === key);
+    return b;
+  };
+  const lics = [...new Set(manPool().map(c => c.licence).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const search = el('input', {type: 'search', value: man.q, placeholder: 'Rechercher une carte, une licence…', oninput: () => { man.q = search.value; man.lim = 60; paintManGrid(); }});
+  search.setAttribute('aria-label', 'Rechercher une carte');
+  const select = (label, value, opts, set) => {
+    const s = el('select', {className: 'mksel', onchange: () => { set(s.value); man.lim = 60; paintManGrid(); }}, ...opts.map(([v, t]) => el('option', {value: v, textContent: t, selected: v === value})));
+    s.setAttribute('aria-label', label);
+    return s;
+  };
+  const tabs = el('div', {className: 'mtabs'}, tab('theirs', d.private ? 'Cartes à demander' : 'Ses cartes', d.private ? '' : d.cards.filter(c => c.theirs > 0).length),
+    tab('mine', 'Mes cartes', d.cards.filter(c => c.mine > 0).length));
+  tabs.setAttribute('role', 'tablist');
+  $('tradeBody').replaceChildren(
+    el('article', {className: 'glass xblock compose', id: 'manTop'}),
+    tabs,
+    ...(d.private && man.tab === 'theirs' ? [el('p', {className: 'xnote', textContent: 'Sa collection est privée : tu peux quand même demander n\'importe quelle carte du catalogue.'})] : []),
+    el('div', {className: 'mfilters'}, el('div', {className: 'mchips', id: 'manChips'}), search,
+      select('Rareté', man.rar, [['', 'Rareté : toutes'], ...RARITIES.map((r, i) => [String(i), r]).reverse()], v => { man.rar = v; }),
+      select('Licence', man.lic, [['', 'Licence : toutes'], ...lics.map(l => [l, l])], v => { man.lic = v; })),
+    el('div', {id: 'manGrid'}),
+    el('p', {className: 'xnote', textContent: 'Les cotes du marché servent d\'estimation (prix moyen de la rareté sans cote). La surcouche n\'ajoute jamais de pièces à un échange.'}));
+  paintManTop();
+  paintManChips();
+  paintManGrid();
 }
 function renderTrades(d) {
   if (!d.private) draft ??= {give: new Set(d.pack.give.map(c => c.id)), get: new Set(d.pack.get.map(c => c.id))};
@@ -1056,8 +1215,9 @@ async function loadTrades() {
   if (!tradeUser) return;
   const seq = ++tradeSeq;
   draft = null;
-  $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: 'Chargement…'}));
+  if (tradeMode() !== 'manual' || man?.user !== tradeUser) $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: 'Chargement…'}));
   try {
+    if (tradeMode() === 'manual') return await loadManual(seq);
     const d = await getJson(`api/trades?user=${encodeURIComponent(tradeUser)}&mode=${tradeMode()}&safe=${$('tradeSafe').checked ? 1 : 0}&pending=${$('tradePending').checked ? 1 : 0}`);
     if (seq === tradeSeq) renderTrades(d);
   } catch (e) { if (seq === tradeSeq) $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }

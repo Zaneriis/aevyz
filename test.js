@@ -81,6 +81,7 @@ const fake = http.createServer((req, res) => {
       if (JSON.parse(body).p_user === 'prive') return json({ private: true, username: 'Privé' });
       return json({ private: false, username: 'Lui', cards: { bc0: 2, bc1: 1, br0: 2, br1: 1, be3: 1, zzz: 1 }, wishes: ['ac0', 'ac1', 'ar0', 'ar1', 'g2'] });
     }
+    if (p === '/rest/v1/rpc/market_cotes') return json({ bc0: [12, 3], br0: [null, 0] });
     if (p === '/rest/v1/rpc/trade_propose' && game.tradeRefusal) return json({ message: game.tradeRefusal }, 400);
     if (p === '/rest/v1/rpc/trade_propose') game.tradeProposal = JSON.parse(body);
     if (p === '/rest/v1/rpc/trade_respond') (game.responses ||= []).push(JSON.parse(body));
@@ -368,7 +369,7 @@ const start = async () => {
   // Envoi : refus avant tout appel au jeu si la proposition est invalide.
   const proposal = { to: 'lui', give: ['ac0'], get: ['bc0'], message: '  Salut !  ' };
   const tooMany = Array.from({ length: 21 }, (_, i) => 'x' + i);
-  for (const bad of [{ give: [] }, { get: [] }, { give: ['ac0', 'ac0'] }, { get: tooMany }, { to: '' }, { message: 'x'.repeat(281) }, { message: 3 }])
+  for (const bad of [{ give: [] }, { get: [] }, { get: tooMany }, { to: '' }, { message: 'x'.repeat(281) }, { message: 3 }])
     assert.strictEqual((await post('/api/trades/propose', { ...proposal, ...bad })).status, 400, JSON.stringify(bad).slice(0, 40));
   assert.ok(!game.tradeWrites, 'proposition invalide jamais transmise');
   game.tradeRefusal = 'Carte déjà engagée';
@@ -378,9 +379,19 @@ const start = async () => {
   delete game.tradeRefusal;
   assert.strictEqual((await post('/api/trades/propose', { ...proposal, p_give_coins: 500 })).status, 200);
   assert.deepStrictEqual(game.tradeProposal, { p_to: 'lui', p_give: ['ac0'], p_get: ['bc0'], p_give_coins: 0, p_get_coins: 0, p_message: 'Salut !' }, 'jamais de pièces');
+  assert.strictEqual((await post('/api/trades/propose', { ...proposal, give: ['ac0', 'ac0'] })).status, 200, 'deux exemplaires de la même carte');
+  assert.deepStrictEqual(game.tradeProposal.p_give, ['ac0', 'ac0']);
   const beforeResend = game.tradeReads;
   await api('/api/trades?user=lui&mode=classic');
   assert.strictEqual(game.tradeReads, beforeResend + 1, 'les collections sont relues après un envoi');
+  // Échange manuel : les deux collections, envies, cartes en attente et valeur (cote, sinon prix par rareté).
+  const man = await (await api('/api/trades/manual?user=lui')).json(), mc = id => man.cards.find(c => c.id === id);
+  assert.deepStrictEqual([man.private, man.name, man.cards.length], [false, 'Lui', 10], 'mes cartes et les siennes, carte inconnue ignorée');
+  assert.deepStrictEqual(mc('ac0'), { id: 'ac0', name: 'ac0', licence: 'Alpha', rarity: 0, art: null, mine: 3, theirs: 0, myWish: false, theirWish: true, pendingOut: false, pendingIn: false, value: 5 });
+  assert.deepStrictEqual([mc('bc0').value, mc('bc0').myWish, mc('bc0').pendingIn, mc('br0').value, mc('ac1').pendingOut, mc('am5').value], [12, true, true, 40, true, 1200], 'cote, envie, en attente');
+  const manPriv = await (await api('/api/trades/manual?user=prive')).json();
+  assert.deepStrictEqual([manPriv.private, manPriv.cards.length, manPriv.cards.every(c => c.theirs === null)], [true, 16, true], 'collection privée : tout le catalogue');
+  assert.strictEqual((await api('/api/trades/manual')).status, 400);
 
   // Échanges en attente : vus de mon côté, avec mes exemplaires.
   const pend = await (await api('/api/pending')).json();
