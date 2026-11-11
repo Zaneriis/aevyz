@@ -1107,6 +1107,14 @@ async function loadManual(seq) {
   const d = await getJson(`api/trades/manual?user=${encodeURIComponent(tradeUser)}`);
   if (seq !== tradeSeq) return;
   Object.assign(man, {d, byId: new Map(d.cards.map(c => [c.id, c]))});
+  // Échange inverse : seulement les exemplaires encore là (les miens pour donner, les siens pour recevoir).
+  for (const side of ['give', 'get']) {
+    const seen = new Map();
+    man[side] = man[side].filter(id => { const c = man.byId.get(id), n = (seen.get(id) || 0) + 1; seen.set(id, n);
+      if (c && n <= (side === 'give' ? c.mine : c.theirs ?? 9)) return true;
+      man.note = 'Certaines cartes de l\'échange d\'origine ne sont plus disponibles (toi ou ce joueur ne les avez plus) : elles ont été retirées.';
+      return false; });
+  }
   renderManual();
 }
 // Filtres cumulables, comme sur le site ; le dernier (« Toutes ») les enlève.
@@ -1145,7 +1153,8 @@ function paintManTop() {
       return b;
     }) : [el('span', {className: 'xnote', textContent: side === 'give' ? 'Choisis dans « Mes cartes ».' : `Choisis dans « ${man.d.private ? 'Cartes à demander' : 'Ses cartes'} ».`})])));
   const ready = man.give.length && man.get.length;
-  $('manTop').replaceChildren(el('div', {className: 'mtrays'}, tray('give'), tray('get')), gauge(manVal(man.give), manVal(man.get)),
+  $('manTop').replaceChildren(...(man.note ? [el('p', {className: 'xwarn', textContent: man.note})] : []),
+    el('div', {className: 'mtrays'}, tray('give'), tray('get')), gauge(manVal(man.give), manVal(man.get)),
     ...sendParts(man.give, man.get, man.d.name, ready ? '' : 'Ajoute au moins une carte de chaque côté.'));
 }
 function paintManChips() {
@@ -1181,6 +1190,14 @@ function paintManGrid() {
       el('div', {className: 'mpick'}, ...(n ? [rm, el('b', {textContent: `×${n}`})] : []), add));
   })) : el('p', {className: 'xnote', textContent: 'Aucune carte ici. Essaie un autre filtre.'}),
   ...(list.length > man.lim ? [el('button', {type: 'button', className: 'ghost more', textContent: `Voir plus · ${list.length - man.lim}`, onclick: () => { man.lim += 120; paintManGrid(); }})] : []));
+}
+// Historique : l'inverse d'un échange accepté, prérempli dans l'échange manuel (je rends ce que j'ai reçu).
+function reverseTrade(t) {
+  document.querySelector('input[name=tradeMode][value=manual]').checked = true;
+  man = {user: t.player, give: t.get.map(c => c.id), get: t.give.map(c => c.id), tab: 'theirs', f: null, q: '', rar: '', lic: '', lim: 60};
+  tradeMsg = '';
+  location.hash = '#echanges';
+  pickTrade(t.player, t.name);
 }
 function renderManual() {
   const {d} = man;
@@ -1405,7 +1422,8 @@ function historyEl(t) {
     el('p', {className: 'xnote', textContent: `Aujourd'hui : ${plural(mine, 'carte')} de l'échange en doublon chez toi, ${t.give.some(c => c.theirs == null) ? 'collection privée chez ' + who : plural(his, 'carte') + ' en doublon chez ' + who}`}),
     el('div', {className: 'sides'},
       el('div', {}, el('h4', {textContent: t.status === 'acceptee' ? 'Tu as donné' : 'Tu donnais'}), el('div', {className: 'tgrid'}, ...t.give.map(c => historyCard(c, who)))),
-      el('div', {}, el('h4', {textContent: t.status === 'acceptee' ? 'Tu as reçu' : 'Tu recevais'}), el('div', {className: 'tgrid'}, ...t.get.map(c => historyCard(c, who))))));
+      el('div', {}, el('h4', {textContent: t.status === 'acceptee' ? 'Tu as reçu' : 'Tu recevais'}), el('div', {className: 'tgrid'}, ...t.get.map(c => historyCard(c, who))))),
+    ...(t.status === 'acceptee' && t.player ? [el('div', {className: 'acts'}, el('button', {type: 'button', className: 'ghost', textContent: 'Proposer l\'échange inverse', title: 'Ouvre l\'échange manuel prérempli : tu rends ce que tu as reçu contre ce que tu as donné. Rien ne part sans ton clic sur « Envoyer ».', onclick: () => reverseTrade(t)}))] : []));
 }
 function renderTradeHistory() {
   if (!tradeHistory) return;
