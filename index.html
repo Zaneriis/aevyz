@@ -245,6 +245,9 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .mpick .pick{margin:0;width:auto;flex:1}
 .mpick b{font-size:.8rem}
 #manGrid{margin-bottom:16px}
+.psent{margin-bottom:10px}
+.psent summary{cursor:pointer;color:var(--muted);font-size:.85rem;width:max-content}
+.psent[open] summary{margin-bottom:12px}
 @media(max-width:640px){.mtrays{grid-template-columns:minmax(0,1fr)}}
 .tag.newc{color:var(--accent);font-weight:800}
 .status{margin-left:auto;padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:800;background:var(--glass2)}
@@ -1316,6 +1319,7 @@ function pendingTag(c, giving, mine) {
     : n ? ['medium', `Tu l'as déjà ×${n}`] : ['newc', '✦ Nouvelle carte'];
   return el('div', {}, cardEl(c), el('span', {className: `tag ${cls}`, textContent: text}));
 }
+const openSent = new Set();
 function pendingEl(t) {
   const dupesOut = t.give.filter(c => t.mine ? c.owned >= 1 : c.owned >= 2).length, fresh = t.get.filter(c => !c.owned).length;
   const coins = (t.giveCoins ? ` · tu paies ${t.giveCoins} pièces` : '') + (t.getCoins ? ` · tu reçois ${t.getCoins} pièces` : '');
@@ -1328,6 +1332,9 @@ function pendingEl(t) {
     tradeCounts.clear(); renderBadges(); loadPending();
   }});
   const who = t.name || 'ce joueur';
+  const sides = el('div', {className: 'sides'},
+    el('div', {}, el('h4', {textContent: 'Tu donnes'}), el('div', {className: 'tgrid'}, ...t.give.map(c => pendingTag(c, true, t.mine)))),
+    el('div', {}, el('h4', {textContent: 'Tu reçois'}), el('div', {className: 'tgrid'}, ...t.get.map(c => pendingTag(c, false, t.mine)))));
   const actions = t.mine
     ? [act('Annuler la proposition', 'ghost', false, `Annuler la proposition envoyée à ${who} ?`)]
     : [act('Accepter', 'btn', true, `Accepter l'échange de ${who} : tu donnes ${t.give.length} carte(s) et tu en reçois ${t.get.length} ?`),
@@ -1339,9 +1346,8 @@ function pendingEl(t) {
         el('small', {textContent: `il y a ${ago(Date.now() - Date.parse(t.created_at))}${t.expires_at ? ` · expire dans ${ago(Date.parse(t.expires_at) - Date.now())}` : ''}${coins} · ${activeText(t.active_at)}`}))),
     ...(t.message ? [el('blockquote', {textContent: `« ${t.message} »`})] : []),
     el('p', {className: 'xnote', textContent: `Tu donnes ${t.give.length} carte(s) dont ${plural(dupesOut, 'doublon')} · tu reçois ${t.get.length} carte(s) dont ${fresh} nouvelle(s)`}),
-    el('div', {className: 'sides'},
-      el('div', {}, el('h4', {textContent: 'Tu donnes'}), el('div', {className: 'tgrid'}, ...t.give.map(c => pendingTag(c, true, t.mine)))),
-      el('div', {}, el('h4', {textContent: 'Tu reçois'}), el('div', {className: 'tgrid'}, ...t.get.map(c => pendingTag(c, false, t.mine))))),
+    // Envoyés : cartes repliées ; une fiche ouverte le reste quand la liste est relue.
+    t.mine ? el('details', {className: 'psent', open: openSent.has(t.id), ontoggle: e => openSent[e.target.open ? 'add' : 'delete'](t.id)}, el('summary', {textContent: 'Voir les cartes'}), sides) : sides,
     error, el('div', {className: 'acts'}, ...actions));
 }
 async function loadPending() {
