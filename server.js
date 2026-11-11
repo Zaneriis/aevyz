@@ -458,8 +458,8 @@ async function statsPass() {
         up.run(id, x.name ?? null, x.avatar ?? null);
         const prev = last.get(id), v = SNAP_KEYS.map(k => x[k] ?? null);
         if (!prev || SNAP_KEYS.some((k, i) => prev[k] !== v[i])) ins.run(id, now, ...v); // seulement les changements
-        // Activité : cartes totales, uniques ou boosters qui bougent (un échange 1 contre 1 peut garder le même total).
-        if (prev && ['total', 'uniq', 'opened'].some(k => prev[k] !== (x[k] ?? null))) active.run(now, id);
+        // Activité : seulement les boosters ouverts (une vente ou un échange accepté par l'autre change la collection sans action du joueur).
+        if (prev && prev.opened !== (x.opened ?? null)) active.run(now, id);
       }
     });
     const catalog = catalogMap();

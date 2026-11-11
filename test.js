@@ -455,14 +455,18 @@ const start = async () => {
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [
     { licence: 'Alpha', players: 1, cards: 4, size: 5 }, { licence: 'Gamma', players: 1, cards: 1, size: 3 }] }, 'licences enviées, sans mes envies');
   assert.strictEqual(st.find(x => x.id === 'lui').active_at, null, 'pas encore de mouvement');
-  // Un échange 1 contre 1 : même total, mais les uniques bougent.
+  // Collection qui bouge sans booster (vente, échange accepté par l'autre) : pas d'activité.
   game.board[1].uniq = 7;
   const snapsBefore = (await (await api('/api/stats/player?id=prive')).json()).snaps.length;
+  await restart();
+  await until(async () => (await (await api('/api/stats/player?id=lui')).json()).snaps.length === 2, 'relevé des uniques');
+  assert.strictEqual((await statsOf()).find(x => x.id === 'lui').active_at, null, 'collection seule : pas actif');
+  game.board[1].opened++; // un booster ouvert
   await restart();
   await until(async () => (await statsOf()).find(x => x.id === 'lui').active_at, 'activité détectée');
   st = await statsOf();
   assert.strictEqual(st.find(x => x.id === ME).active_at, null, 'moi : rien n\'a bougé');
-  assert.strictEqual((await (await api('/api/stats/player?id=lui')).json()).snaps.length, 2, 'un relevé de plus');
+  assert.strictEqual((await (await api('/api/stats/player?id=lui')).json()).snaps.length, 3, 'un relevé par changement');
   assert.strictEqual((await (await api('/api/stats/player?id=prive')).json()).snaps.length, snapsBefore, 'rien de nouveau : pas de relevé');
   assert.ok((await (await api('/api/players')).json()).players.find(x => x.id === 'lui').active_at > 0, 'activité dans la liste des échanges');
   assert.strictEqual((await (await api('/api/notifications')).json())[0].title, 'Échange reçu');
