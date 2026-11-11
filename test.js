@@ -461,6 +461,7 @@ const start = async () => {
   assert.deepStrictEqual(luiStats.rarity.map(r => r.counts), [[2, 0, 2, 1, 0, 0, 0]], 'cartes uniques par rareté, carte inconnue ignorée');
   assert.deepStrictEqual(luiStats.dupes, [[1, 1], [0, 0], [1, 1], [0, 0], [0, 0], [0, 0], [0, 0]], 'doublons par rareté : cartes en double, exemplaires en trop');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=' + ME)).json()).dupes.slice(0, 3), [[1, 2], [0, 0], [1, 1]], 'mes doublons');
+  assert.deepStrictEqual((await statsOf()).find(x => x.id === 'lui').dupes, luiStats.dupes, 'doublons dans la liste des joueurs');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
   assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes du catalogue par rareté, alternatives comprises');
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [

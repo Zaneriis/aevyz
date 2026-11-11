@@ -480,9 +480,9 @@ async function statsPass() {
 }
 function statsPlayers() {
   const me = kvGet('session')?.user_id;
-  return db.prepare(`SELECT p.id, p.name, p.avatar, p.active_at, p.read_at, s.total, s.uniq, s.opened, s.mythics, s.pos_uniq, s.pos_total, s.pos_opened, s.pos_myth
+  return db.prepare(`SELECT p.id, p.name, p.avatar, p.active_at, p.read_at, p.dupes, s.total, s.uniq, s.opened, s.mythics, s.pos_uniq, s.pos_total, s.pos_opened, s.pos_myth
     FROM players p LEFT JOIN snaps s ON s.player = p.id AND s.at = (SELECT MAX(at) FROM snaps WHERE player = p.id) ORDER BY s.pos_uniq IS NULL, s.pos_uniq`).all()
-    .map(p => ({ ...p, me: p.id === me }));
+    .map(p => ({ ...p, dupes: p.dupes ? JSON.parse(p.dupes) : null, me: p.id === me }));
 }
 function statsPlayer(id) {
   return {

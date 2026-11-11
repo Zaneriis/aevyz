@@ -307,6 +307,12 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .envy th{text-align:left;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.6px;padding:6px 8px;border-bottom:1px solid var(--line)}
 .envy td{padding:6px 8px;border-bottom:1px solid #ffffff0a;font-variant-numeric:tabular-nums}
 .envy .bar{display:flex;align-items:center;gap:8px}
+.envy th button{all:unset;cursor:pointer}
+.envy th button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.envy th[aria-sort]{color:var(--text)}
+.envy .num{text-align:right}
+.envy td.zero{color:#ffffff40}
+.envy tr.me td{background:#ffc83d0a}
 .envy .bar i{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);min-width:2px}
 @media(max-width:940px){.stats{grid-template-columns:minmax(0,1fr)}}
 .rprog{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
@@ -580,6 +586,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
     <nav class="tabs subtabs" aria-label="Statistiques">
       <a href="#stats">Joueurs</a>
       <a href="#stats-licences">Licences</a>
+      <a href="#stats-doublons">Doublons</a>
     </nav>
     <section class="exch stats" id="subStatsPlayers">
       <aside class="people glass panel">
@@ -588,6 +595,13 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
         <div class="plist" id="stList"></div>
       </aside>
       <div id="stBody" aria-live="polite"><p class="xnote">Chargement…</p></div>
+    </section>
+    <section id="subStatsDupes">
+      <div class="xhead"><h2>Doublons par joueur</h2>
+        <div class="xfilters"><input type="search" id="dpSearch" placeholder="Chercher un joueur" aria-label="Chercher un joueur" style="width:auto">
+          <select id="dpCount" aria-label="Compter" class="mksel"><option value="1">Exemplaires en trop</option><option value="0">Cartes en double</option></select></div></div>
+      <p class="xnote">Exemplaires en trop : tout ce qui dépasse le premier exemplaire (une carte ×3 compte 2). Collections publiques, lues à tour de rôle ; « – » : collection privée ou pas encore lue. Clique sur une colonne pour trier.</p>
+      <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr id="dpHead"></tr></thead><tbody id="dpBody"></tbody></table></div>
     </section>
     <section id="subStatsLicences">
       <div class="xhead"><h2>Licences les plus enviées</h2>
@@ -1635,6 +1649,35 @@ function renderStatsPlayer() {
 }
 $('stSearch').oninput = renderStatsList;
 let envyData = null;
+// ---- Doublons par joueur : une colonne par rareté, triable ----
+let dupSort = {col: 'total', desc: true};
+async function loadDupes() {
+  try { statsRows = await getJson('api/stats/players'); renderDupes(); }
+  catch (e) { $('dpBody').replaceChildren(el('tr', {}, el('td', {colSpan: 9, className: 'xnote', textContent: e.message}))); }
+}
+function renderDupes() {
+  if (!statsRows) return;
+  const k = +$('dpCount').value, q = $('dpSearch').value.trim().toLowerCase();
+  const val = (p, col) => !p.dupes ? null : col === 'total' ? p.dupes.reduce((s, d) => s + d[k], 0) : p.dupes[col][k];
+  const cols = [['name', 'Joueur'], ...RARITIES.map((r, i) => [i, r]), ['total', 'Total']];
+  $('dpHead').replaceChildren(...cols.map(([col, label]) => {
+    const th = el('th', {className: col === 'name' ? '' : 'num'}, el('button', {type: 'button', textContent: label + (dupSort.col === col ? (dupSort.desc ? ' ↓' : ' ↑') : ''), onclick: () => {
+      dupSort = dupSort.col === col ? {col, desc: !dupSort.desc} : {col, desc: col !== 'name'};
+      renderDupes();
+    }}));
+    if (dupSort.col === col) th.setAttribute('aria-sort', dupSort.desc ? 'descending' : 'ascending');
+    return th;
+  }));
+  const dir = dupSort.desc ? -1 : 1;
+  const rows = statsRows.filter(p => (p.name || '').toLowerCase().includes(q)).sort((a, b) => dupSort.col === 'name'
+    ? dir * (a.name || '').localeCompare(b.name || '', 'fr')
+    : (val(a, dupSort.col) == null) - (val(b, dupSort.col) == null) || dir * (val(a, dupSort.col) - val(b, dupSort.col))); // inconnus toujours en bas
+  $('dpBody').replaceChildren(...(rows.length ? rows.map(p => el('tr', {className: p.me ? 'me' : ''}, el('td', {textContent: (p.name || 'Joueur') + (p.me ? ' (toi)' : '')}),
+    ...cols.slice(1).map(([col]) => { const v = val(p, col); return el('td', {className: 'num' + (v ? '' : ' zero'), textContent: v == null ? '–' : v.toLocaleString('fr-FR')}); })))
+    : [el('tr', {}, el('td', {colSpan: cols.length, className: 'xnote', textContent: 'Aucun joueur.'}))]));
+}
+$('dpSearch').oninput = renderDupes;
+$('dpCount').onchange = renderDupes;
 function renderEnvy() {
   if (!envyData) return;
   const q = $('lvSearch').value.trim().toLowerCase(), key = $('lvSort').value, ratio = l => l.cards / (l.size || 1);
@@ -1836,7 +1879,7 @@ $('mkQuietForm').onsubmit = e => e.preventDefault();
 setInterval(() => { if (!$('viewMarket').hidden) loadMarket(); }, 30000);
 
 function showView() {
-  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
   for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats']) $(id).hidden = id !== view;
   if (view === 'viewMarket') { mkNewSince ??= mkSeenAt; loadMarket(); } else mkNewSince = null; // nouveaux achats surlignés pendant la visite
   paintMkBadge();
@@ -1844,6 +1887,8 @@ function showView() {
   $('subMkAuctions').hidden = location.hash !== '#marche-encheres';
   $('subStatsPlayers').hidden = location.hash !== '#stats';
   $('subStatsLicences').hidden = location.hash !== '#stats-licences';
+  $('subStatsDupes').hidden = location.hash !== '#stats-doublons';
+  if (location.hash === '#stats-doublons') loadDupes();
   if (location.hash === '#stats') loadStats();
   if (location.hash === '#stats-licences') loadEnvy();
   document.querySelectorAll('.tabs:not(.subtabs) a').forEach(a => { if ((views[a.hash] || 'viewBoosters') === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
