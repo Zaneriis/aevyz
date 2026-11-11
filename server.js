@@ -60,6 +60,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS rar_snaps (player TEXT NOT NULL, at INTEGER NOT NULL, counts TEXT NOT NULL, PRIMARY KEY (player, at));
 `);
 try { db.exec('ALTER TABLE players ADD COLUMN dupes TEXT'); } catch {} // bases d'avant les doublons par rareté
+try { db.exec('ALTER TABLE players ADD COLUMN cards TEXT'); } catch {} // ids des cartes possédées, pour l'onglet Manques
 const kvGet = k => { const r = db.prepare('SELECT value FROM kv WHERE key = ?').get(k); return r ? JSON.parse(r.value) : null; };
 const kvSet = (k, v) => db.prepare('INSERT INTO kv VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(k, JSON.stringify(v));
 
@@ -430,16 +431,20 @@ function saveRarity(player, cards, catalog, at) {
     if (n > 0 && r != null) counts[r]++; // cartes uniques par rareté, comme le profil du site
     if (n > 1 && r != null) { dupes[r][0]++; dupes[r][1] += n - 1; }
   }
-  db.prepare('UPDATE players SET dupes = ? WHERE id = ?').run(JSON.stringify(dupes), player);
+  db.prepare('UPDATE players SET dupes = ?, cards = ? WHERE id = ?').run(JSON.stringify(dupes), JSON.stringify(cards.filter(([, n]) => n > 0).map(([id]) => id)), player);
   const json = JSON.stringify(counts), last = db.prepare('SELECT counts FROM rar_snaps WHERE player = ? ORDER BY at DESC LIMIT 1').get(player);
   if (last?.counts !== json) db.prepare('INSERT OR REPLACE INTO rar_snaps VALUES (?, ?, ?)').run(player, at, json);
 }
 // Relit une collection (la mienne, ou celle d'un joueur avec ses envies) et enregistre ses raretés si elles ont bougé.
 async function readCollection(id, catalog = catalogMap()) {
-  if (id === kvGet('session')?.user_id) return saveRarity(id, (await selectAll('owned_cards', 'card_id,count', 'card_id')).map(r => [r.card_id, r.count]), catalog, Date.now());
+  if (id === kvGet('session')?.user_id) {
+    saveRarity(id, (await selectAll('owned_cards', 'card_id,count', 'card_id')).map(r => [r.card_id, r.count]), catalog, Date.now());
+    return void db.prepare('UPDATE players SET read_at = ? WHERE id = ?').run(Date.now(), id);
+  }
   const { theirs } = await theirsOf(id, 0);
   if (!theirs?.private) saveRarity(id, Object.entries(theirs?.cards || {}), catalog, Date.now());
   db.prepare('UPDATE players SET read_at = ?, wishes = ? WHERE id = ?').run(Date.now(), theirs?.private ? null : JSON.stringify(theirs?.wishes || []), id);
+  if (theirs?.private) db.prepare('UPDATE players SET cards = NULL, dupes = NULL WHERE id = ?').run(id);
   return theirs?.private;
 }
 async function refreshPlayer({ id }) {
@@ -505,6 +510,18 @@ function statsPlayer(id) {
     rarityTotals: db.prepare('SELECT rarity, COUNT(*) AS n FROM cards WHERE rarity IS NOT NULL GROUP BY rarity').all()
       .reduce((t, r) => { t[r.rarity] = r.n; return t; }, [0, 0, 0, 0, 0, 0, 0]),
   };
+}
+// Pour chaque joueur : nombre de cartes par rareté qu'il possède et que le joueur de référence n'a pas (dernières lectures).
+function missingFor(ref) {
+  const own = db.prepare('SELECT cards FROM players WHERE id = ?').get(ref)?.cards;
+  if (!own) return [400, { error: 'Collection de ce joueur pas encore lue, ou privée.' }];
+  const have = new Set(JSON.parse(own)), catalog = catalogMap(), out = {};
+  for (const p of db.prepare('SELECT id, cards FROM players').all()) {
+    if (!p.cards) { out[p.id] = null; continue; }
+    const counts = out[p.id] = [0, 0, 0, 0, 0, 0, 0];
+    for (const id of JSON.parse(p.cards)) { const r = catalog.get(id)?.rarity; if (r != null && !have.has(id)) counts[r]++; }
+  }
+  return [200, out];
 }
 // Licences les plus enviées : joueurs qui veulent au moins une carte de la licence, puis cartes voulues.
 let envyCache = null;
@@ -932,6 +949,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/stats/players') return send(200, statsPlayers());
     if (req.method === 'GET' && url.pathname === '/api/stats/player') return send(200, statsPlayer(url.searchParams.get('id') || ''));
     if (req.method === 'GET' && url.pathname === '/api/stats/licences') return send(200, licenceEnvy());
+    if (req.method === 'GET' && url.pathname === '/api/stats/missing') return send(...missingFor(url.searchParams.get('id') || ''));
     if (req.method === 'GET' && url.pathname === '/api/notifications')
       return send(200, await sb('/rest/v1/notifications?select=id,kind,title,body,link,read_at,created_at&order=created_at.desc&limit=40'));
     if (req.method === 'GET' && url.pathname === '/api/trades') {

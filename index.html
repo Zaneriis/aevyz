@@ -316,9 +316,11 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .reread .ghost{padding:4px 11px;font-size:.82rem}
 .plink{color:var(--text);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
 .plink:hover{text-decoration-color:var(--accent)}
-#dpHead th[style]{color:var(--rc);box-shadow:inset 0 -2px color-mix(in srgb,var(--rc) 70%,transparent)}
-#dpBody td[style]:not(.zero){color:color-mix(in srgb,var(--rc) 75%,#fff);font-weight:700}
+#dpHead th[style],#msHead th[style]{color:var(--rc);box-shadow:inset 0 -2px color-mix(in srgb,var(--rc) 70%,transparent)}
+#dpBody td[style]:not(.zero),#msBody td[style]:not(.zero){color:color-mix(in srgb,var(--rc) 75%,#fff);font-weight:700}
 .envy tr.me td{background:#ffc83d0a}
+.envy td small{display:block;color:var(--muted);font-size:.75rem}
+.envy .ghost{padding:3px 10px;font-size:.78rem;white-space:nowrap}
 .envy .bar i{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);min-width:2px}
 @media(max-width:940px){.stats{grid-template-columns:minmax(0,1fr)}}
 .rprog{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
@@ -593,6 +595,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
       <a href="#stats">Joueurs</a>
       <a href="#stats-licences">Licences</a>
       <a href="#stats-doublons">Doublons</a>
+      <a href="#stats-manques">Manques</a>
     </nav>
     <section class="exch stats" id="subStatsPlayers">
       <aside class="people glass panel">
@@ -608,6 +611,13 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
           <select id="dpCount" aria-label="Compter" class="mksel"><option value="1">Exemplaires en trop</option><option value="0">Cartes en double</option></select></div></div>
       <p class="xnote">Exemplaires en trop : tout ce qui dépasse le premier exemplaire (une carte ×3 compte 2). Collections publiques, lues à tour de rôle ; « – » : collection privée ou pas encore lue. Clique sur une colonne pour trier.</p>
       <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr id="dpHead"></tr></thead><tbody id="dpBody"></tbody></table></div>
+    </section>
+    <section id="subStatsMissing">
+      <div class="xhead"><h2>Ce qu'ils ont et que <span id="msWho">tu n'as</span> pas</h2>
+        <div class="xfilters"><select id="msRef" aria-label="Joueur de référence" class="mksel"></select>
+          <input type="search" id="msSearch" placeholder="Chercher un joueur" aria-label="Chercher un joueur" style="width:auto"></div></div>
+      <p class="xnote">Pour chaque joueur : ses cartes, par rareté, que le joueur choisi n'a pas, d'après les dernières lectures (ta collection toutes les 5 min, les autres à tour de rôle). « – » : collection privée ou pas encore lue. Clique sur une colonne pour trier.</p>
+      <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr id="msHead"></tr></thead><tbody id="msBody"></tbody></table></div>
     </section>
     <section id="subStatsLicences">
       <div class="xhead"><h2>Licences les plus enviées</h2>
@@ -1695,27 +1705,60 @@ async function loadDupes() {
   try { statsRows = await getJson('api/stats/players'); renderDupes(); }
   catch (e) { $('dpBody').replaceChildren(el('tr', {}, el('td', {colSpan: 9, className: 'xnote', textContent: e.message}))); }
 }
+// Un joueur par ligne, une rareté par colonne, plus un total ; val(p, i) : valeur d'une rareté ou null si inconnue.
+function rarityTable({head, body, search, sort, rerender, val, extra}) {
+  const q = $(search).value.trim().toLowerCase();
+  const v = (p, col) => { const r = RARITIES.map((_, i) => val(p, i)); return r[0] == null ? null : col === 'total' ? r.reduce((s, x) => s + x, 0) : r[col]; };
+  const cols = [['name', 'Joueur'], ...RARITIES.map((r, i) => [i, r]), ['total', 'Total']];
+  $(head).replaceChildren(...cols.map(([col, label]) => {
+    const th = el('th', {className: col === 'name' ? '' : 'num', style: typeof col === 'number' ? '--rc:' + RCOL[col] : ''}, el('button', {type: 'button', textContent: label + (sort.col === col ? (sort.desc ? ' ↓' : ' ↑') : ''), onclick: () => {
+      Object.assign(sort, sort.col === col ? {desc: !sort.desc} : {col, desc: col !== 'name'});
+      rerender();
+    }}));
+    if (sort.col === col) th.setAttribute('aria-sort', sort.desc ? 'descending' : 'ascending');
+    return th;
+  }), ...(extra ? [el('th')] : []));
+  const dir = sort.desc ? -1 : 1;
+  const rows = statsRows.filter(p => (p.name || '').toLowerCase().includes(q)).sort((a, b) => sort.col === 'name'
+    ? dir * (a.name || '').localeCompare(b.name || '', 'fr')
+    : (v(a, sort.col) == null) - (v(b, sort.col) == null) || dir * (v(a, sort.col) - v(b, sort.col))); // inconnus toujours en bas
+  $(body).replaceChildren(...(rows.length ? rows.map(p => el('tr', {className: p.me ? 'me' : ''}, el('td', {}, p.me ? (p.name || 'Joueur') + ' (toi)' : el('a', {href: '#echanges', className: 'plink', title: 'Voir les échanges possibles', textContent: p.name || 'Joueur', onclick: () => pickTrade(p.id, p.name)}), ...(extra ? [el('small', {textContent: p.read_at ? 'lue ' + time(p.read_at) : 'pas encore lue'})] : [])),
+    ...cols.slice(1).map(([col]) => { const x = v(p, col); return el('td', {className: 'num' + (x ? '' : ' zero'), style: typeof col === 'number' ? '--rc:' + RCOL[col] : '', textContent: x == null ? '–' : x.toLocaleString('fr-FR')}); }),
+    ...(extra ? [el('td', {}, extra(p))] : [])))
+    : [el('tr', {}, el('td', {colSpan: cols.length + !!extra, className: 'xnote', textContent: 'Aucun joueur.'}))]));
+}
 function renderDupes() {
   if (!statsRows) return;
-  const k = +$('dpCount').value, q = $('dpSearch').value.trim().toLowerCase();
-  const val = (p, col) => !p.dupes ? null : col === 'total' ? p.dupes.reduce((s, d) => s + d[k], 0) : p.dupes[col][k];
-  const cols = [['name', 'Joueur'], ...RARITIES.map((r, i) => [i, r]), ['total', 'Total']];
-  $('dpHead').replaceChildren(...cols.map(([col, label]) => {
-    const th = el('th', {className: col === 'name' ? '' : 'num', style: typeof col === 'number' ? '--rc:' + RCOL[col] : ''}, el('button', {type: 'button', textContent: label + (dupSort.col === col ? (dupSort.desc ? ' ↓' : ' ↑') : ''), onclick: () => {
-      dupSort = dupSort.col === col ? {col, desc: !dupSort.desc} : {col, desc: col !== 'name'};
-      renderDupes();
-    }}));
-    if (dupSort.col === col) th.setAttribute('aria-sort', dupSort.desc ? 'descending' : 'ascending');
-    return th;
-  }));
-  const dir = dupSort.desc ? -1 : 1;
-  const rows = statsRows.filter(p => (p.name || '').toLowerCase().includes(q)).sort((a, b) => dupSort.col === 'name'
-    ? dir * (a.name || '').localeCompare(b.name || '', 'fr')
-    : (val(a, dupSort.col) == null) - (val(b, dupSort.col) == null) || dir * (val(a, dupSort.col) - val(b, dupSort.col))); // inconnus toujours en bas
-  $('dpBody').replaceChildren(...(rows.length ? rows.map(p => el('tr', {className: p.me ? 'me' : ''}, el('td', {}, p.me ? (p.name || 'Joueur') + ' (toi)' : el('a', {href: '#echanges', className: 'plink', title: 'Voir les échanges possibles', textContent: p.name || 'Joueur', onclick: () => pickTrade(p.id, p.name)})),
-    ...cols.slice(1).map(([col]) => { const v = val(p, col); return el('td', {className: 'num' + (v ? '' : ' zero'), style: typeof col === 'number' ? '--rc:' + RCOL[col] : '', textContent: v == null ? '–' : v.toLocaleString('fr-FR')}); })))
-    : [el('tr', {}, el('td', {colSpan: cols.length, className: 'xnote', textContent: 'Aucun joueur.'}))]));
+  const k = +$('dpCount').value;
+  rarityTable({head: 'dpHead', body: 'dpBody', search: 'dpSearch', sort: dupSort, rerender: renderDupes, val: (p, i) => p.dupes ? p.dupes[i][k] : null});
 }
+// ---- Manques : ce que chaque joueur a et que le joueur choisi n'a pas ----
+let msSort = {col: 'total', desc: true}, msData = null, msRef = null;
+async function loadMissing() {
+  try {
+    statsRows = await getJson('api/stats/players');
+    msRef ??= statsRows.find(p => p.me)?.id;
+    $('msRef').replaceChildren(...statsRows.map(p => el('option', {value: p.id, textContent: (p.name || 'Joueur') + (p.me ? ' (toi)' : ''), selected: p.id === msRef})));
+    const ref = statsRows.find(p => p.id === msRef);
+    $('msWho').textContent = !ref || ref.me ? "tu n'as" : (ref.name || 'Joueur') + " n'a";
+    msData = await getJson('api/stats/missing?id=' + encodeURIComponent(msRef));
+    renderMissing();
+  } catch (e) { msData = null; $('msHead').replaceChildren(); $('msBody').replaceChildren(el('tr', {}, el('td', {colSpan: 10, className: 'xnote', textContent: e.message}))); }
+}
+function renderMissing() {
+  if (!statsRows || !msData) return;
+  rarityTable({head: 'msHead', body: 'msBody', search: 'msSearch', sort: msSort, rerender: renderMissing, val: (p, i) => msData[p.id]?.[i] ?? null, extra: p => {
+    const b = el('button', {type: 'button', className: 'ghost', textContent: 'Relire', title: 'Relit sa collection sur Aevyz', onclick: async () => {
+      b.disabled = true;
+      b.textContent = 'Lecture…';
+      try { await post('api/stats/refresh', {id: p.id}); await loadMissing(); }
+      catch (e) { b.textContent = 'Relire'; b.disabled = false; b.title = e.message; alert(e.message); }
+    }});
+    return b;
+  }});
+}
+$('msSearch').oninput = renderMissing;
+$('msRef').onchange = () => { msRef = $('msRef').value; loadMissing(); };
 $('dpSearch').oninput = renderDupes;
 $('dpCount').onchange = renderDupes;
 function renderEnvy() {
@@ -1919,7 +1962,7 @@ $('mkQuietForm').onsubmit = e => e.preventDefault();
 setInterval(() => { if (!$('viewMarket').hidden) loadMarket(); }, 30000);
 
 function showView() {
-  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
   for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats']) $(id).hidden = id !== view;
   if (view === 'viewMarket') { mkNewSince ??= mkSeenAt; loadMarket(); } else mkNewSince = null; // nouveaux achats surlignés pendant la visite
   paintMkBadge();
@@ -1929,6 +1972,8 @@ function showView() {
   $('subStatsLicences').hidden = location.hash !== '#stats-licences';
   $('subStatsDupes').hidden = location.hash !== '#stats-doublons';
   if (location.hash === '#stats-doublons') loadDupes();
+  $('subStatsMissing').hidden = location.hash !== '#stats-manques';
+  if (location.hash === '#stats-manques') loadMissing();
   if (location.hash === '#stats') loadStats();
   if (location.hash === '#stats-licences') loadEnvy();
   document.querySelectorAll('.tabs:not(.subtabs) a').forEach(a => { if ((views[a.hash] || 'viewBoosters') === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });

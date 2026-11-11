@@ -469,6 +469,11 @@ const start = async () => {
   assert.strictEqual((await post('/api/stats/refresh', { id: 'prive' })).status, 400, 'collection privée');
   assert.strictEqual((await post('/api/stats/refresh', { id: 'inconnu' })).status, 400, 'joueur inconnu');
   assert.strictEqual((await post('/api/stats/refresh', { id: ME })).status, 200, 'ma collection');
+  // Manques : cartes par rareté qu'a chaque joueur et que la référence n'a pas.
+  const missing = async id => { const r = await api('/api/stats/missing?id=' + id); return [r.status, await r.json()]; };
+  assert.deepStrictEqual(await missing(ME), [200, { [ME]: [0, 0, 0, 0, 0, 0, 0], lui: [2, 0, 2, 1, 0, 0, 0], prive: null }], 'ce que les autres ont et pas moi');
+  assert.deepStrictEqual((await missing('lui'))[1][ME], [2, 0, 2, 0, 0, 1, 0], 'ce que j\'ai et pas lui');
+  assert.strictEqual((await missing('prive'))[0], 400, 'référence privée');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
   assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes du catalogue par rareté, alternatives comprises');
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [
