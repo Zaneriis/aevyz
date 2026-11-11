@@ -251,13 +251,14 @@ const start = async () => {
   await post('/api/toggle', { genre: 'tous' });
   await settled();
   assert.strictEqual(game.calls.length, 0, 'les 3 restants attendent le prochain lot');
-  // Prochain passage : 30 s après l'arrivée du 9e booster d'après le compteur du site (7 en réserve + 2 recharges de 10 min).
-  game.profile.charges = 7; game.profile.bonus_packs = 0; game.profile.charges_at = iso(5 * 60000);
+  // Prochain passage : 30 s après l'arrivée du 9e booster d'après le compteur du site (1 en réserve + 8 recharges de 10 min),
+  // au-delà du passage régulier (60 min ici) : le lot n'est pas avancé.
+  game.profile.charges = 1; game.profile.bonus_packs = 0; game.profile.charges_at = iso(5 * 60000);
   await post('/api/toggle', { genre: 'tous' });
   await settled();
   assert.strictEqual(game.calls.length, 0);
   const wait = (await state()).nextPass - Date.now();
-  assert.ok(Math.abs(wait - (15 * 60000 + 30000)) < 5000, 'passage visé 15 min 30 plus tard, pas ' + Math.round(wait / 1000) + ' s');
+  assert.ok(Math.abs(wait - (75 * 60000 + 30000)) < 5000, 'passage visé 1 h 15 min 30 plus tard, pas ' + Math.round(wait / 1000) + ' s');
   game.profile.charges = 2; game.profile.bonus_packs = 1; game.profile.charges_at = iso(0);
   await post('/api/mode', { mode: 'each' });
   await settled();

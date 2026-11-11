@@ -256,9 +256,9 @@ function batchReadyAt(p) {
 }
 function schedule() {
   let ms = kvGet('mode') === 'sneaky' ? sneakyDelay() : INTERVAL_MIN * 60000;
-  // 30 s après le 9e booster ; le passage régulier reste le plafond, il relit le compteur si le site a bougé entre-temps.
+  // 30 s après le 9e booster, même dans 1 h 30 ; un passage trop tôt (booster ouvert à la main) relit le compteur et revise.
   const ready = kvGet('mode') === 'batch' && lastProfile ? batchReadyAt(lastProfile) : null;
-  if (ready) ms = Math.min(ms, Math.max(0, ready - Date.now()) + BATCH_MARGIN_MS);
+  if (ready) ms = Math.max(0, ready - Date.now()) + BATCH_MARGIN_MS;
   nextPass = Date.now() + ms;
   clearTimeout(timer);
   timer = setTimeout(() => { due = true; schedule(); pass(); }, ms);
@@ -290,6 +290,7 @@ async function syncVisit() { // un booster ouvert à la main sur le site appara�
   if (!kvGet('session') || Date.now() - visitSyncAt < VISIT_SYNC_MS) return;
   visitSyncAt = Date.now();
   try { await syncHistory(); lastProfile = await profile(); } catch (e) { log('Historique : ' + e.message); }
+  if (kvGet('mode') === 'batch' && !running) schedule(); // compteur relu : un booster offert peut avancer le lot
 }
 function markSeen() {
   const now = Date.now(), previous = kvGet('seen_at') ?? now;
