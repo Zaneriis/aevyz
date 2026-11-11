@@ -59,6 +59,7 @@ db.exec(`
     pos_uniq INTEGER, pos_total INTEGER, pos_opened INTEGER, pos_myth INTEGER, PRIMARY KEY (player, at));
   CREATE TABLE IF NOT EXISTS rar_snaps (player TEXT NOT NULL, at INTEGER NOT NULL, counts TEXT NOT NULL, PRIMARY KEY (player, at));
 `);
+try { db.exec('ALTER TABLE players ADD COLUMN dupes TEXT'); } catch {} // bases d'avant les doublons par rareté
 const kvGet = k => { const r = db.prepare('SELECT value FROM kv WHERE key = ?').get(k); return r ? JSON.parse(r.value) : null; };
 const kvSet = (k, v) => db.prepare('INSERT INTO kv VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(k, JSON.stringify(v));
 
@@ -307,6 +308,7 @@ function state() {
     saved: db.prepare('SELECT COUNT(*) AS n FROM openings').get().n,
     mode: MODES[kvGet('mode')] ? kvGet('mode') : 'each', batchSize: BATCH_SIZE,
     quiet: kvGet('quiet') || { on: false, from: '23:00', to: '07:00' }, quietNow: quietNow(), recycle: recycleJob,
+    boughtAt: (kvGet('market_bought') || []).map(b => b.at), // pastille de l'onglet Marché
   };
 }
 const marks = list => list.map(() => '?').join(',');
@@ -422,8 +424,13 @@ const activity = () => new Map(db.prepare('SELECT id, active_at FROM players').a
 // ---- Statistiques ----
 const SNAP_KEYS = ['total', 'uniq', 'opened', 'mythics', ...Object.values(STATS_SORTS)];
 function saveRarity(player, cards, catalog, at) {
-  const counts = [0, 0, 0, 0, 0, 0, 0];
-  for (const [id, n] of cards) { const r = catalog.get(id)?.rarity; if (n > 0 && r != null) counts[r]++; } // cartes uniques par rareté, comme le profil du site
+  const counts = [0, 0, 0, 0, 0, 0, 0], dupes = counts.map(() => [0, 0]); // doublons : [cartes en double, exemplaires en trop]
+  for (const [id, n] of cards) {
+    const r = catalog.get(id)?.rarity;
+    if (n > 0 && r != null) counts[r]++; // cartes uniques par rareté, comme le profil du site
+    if (n > 1 && r != null) { dupes[r][0]++; dupes[r][1] += n - 1; }
+  }
+  db.prepare('UPDATE players SET dupes = ? WHERE id = ?').run(JSON.stringify(dupes), player);
   const json = JSON.stringify(counts), last = db.prepare('SELECT counts FROM rar_snaps WHERE player = ? ORDER BY at DESC LIMIT 1').get(player);
   if (last?.counts !== json) db.prepare('INSERT OR REPLACE INTO rar_snaps VALUES (?, ?, ?)').run(player, at, json);
 }
@@ -481,6 +488,7 @@ function statsPlayer(id) {
   return {
     snaps: db.prepare(`SELECT at, ${SNAP_KEYS.join(', ')} FROM snaps WHERE player = ? ORDER BY at`).all(id),
     rarity: db.prepare('SELECT at, counts FROM rar_snaps WHERE player = ? ORDER BY at').all(id).map(r => ({ at: r.at, counts: JSON.parse(r.counts) })),
+    dupes: JSON.parse(db.prepare('SELECT dupes FROM players WHERE id = ?').get(id)?.dupes || 'null'),
     // ponytail: cartes connues du catalogue local, retirées du jeu comprises ; filtrer si le site en retire beaucoup.
     rarityTotals: db.prepare('SELECT rarity, COUNT(*) AS n FROM cards WHERE rarity IS NOT NULL GROUP BY rarity').all()
       .reduce((t, r) => { t[r.rarity] = r.n; return t; }, [0, 0, 0, 0, 0, 0, 0]),
@@ -659,16 +667,23 @@ async function startRecycle({ items }) {
   return [200, { ok: true }];
 }
 
-// ---- Marché : routines d'achat à prix fixe (jamais d'enchère), achat après un délai tiré au hasard ----
+// ---- Marché : routines d'achat à prix fixe, achat après un délai tiré au hasard ----
 const MARKET_MS = (+process.env.MARKET_MIN || 5) * 60000;
+const MARKET_CACHE_MS = process.env.MARKET_CACHE_MS ? +process.env.MARKET_CACHE_MS : 60000; // annonces affichées : relues au plus une fois par minute
 const DELAY_UNIT_MS = +process.env.DELAY_UNIT_MS || 60000; // réduit par test.js
-const ROUTINE_KINDS = ['card', 'licence', 'rarity'];
 let market = { at: 0, listings: [] }, spent = 0; // spent : pièces engagées au marché, pour que openAll ne crie pas à la fuite
 const planned = new Map(); // id d'annonce → { routine, card, price, at, timer }
-const routines = () => kvGet('routines') || [];
+// Conditions d'une routine, comme un WHERE : where = [groupe OU groupe…], chaque groupe = [condition ET condition…].
+const COND_OPS = { card: ['=', '!='], licence: ['=', '!='], rarity: ['=', '!=', '>=', '<='], price: ['<='] };
+const CMP = { '=': (a, b) => a === b, '!=': (a, b) => a !== b, '>=': (a, b) => a >= b, '<=': (a, b) => a <= b };
+// Ancien format (une cible + un prix max) converti à la lecture.
+const upgrade = r => r.where ? r : { ...r, where: [[{ f: r.kind, op: '=', v: r.kind === 'rarity' ? +r.value : r.value }, { f: 'price', op: '<=', v: r.max }]] };
+const routines = () => (kvGet('routines') || []).map(upgrade);
+const listMarket = async () => (market = { at: Date.now(), listings: await sb('/rest/v1/rpc/market_list', { method: 'POST', body: {} }) || [] }).listings;
 function matches(r, l, c) {
-  if (!r.on || l.kind !== 'fixe' || l.mine || (l.status ?? 'active') !== 'active' || !(l.price <= r.max)) return false;
-  return r.kind === 'card' ? l.card === r.value : r.kind === 'licence' ? c?.licence === r.value : c?.rarity === +r.value;
+  if (!r.on || l.kind !== 'fixe' || l.mine || (l.status ?? 'active') !== 'active') return false;
+  const val = { card: l.card, licence: c?.licence, rarity: c?.rarity, price: l.price };
+  return r.where.some(g => g.every(k => CMP[k.op](val[k.f], k.v)));
 }
 // Tranches [min, max] en minutes, chacune avec son poids : on tire une tranche selon les poids, puis une durée uniforme dedans.
 function pickDelay(delays) {
@@ -680,9 +695,7 @@ const busy = id => [...planned.values()].filter(p => p.routine === id).length;
 async function scanMarket() {
   const active = routines().filter(r => r.on && r.left > 0);
   if (!kvGet('session') || !active.length || quietNow(kvGet('market_quiet'))) return;
-  try {
-    market = { at: Date.now(), listings: await sb('/rest/v1/rpc/market_list', { method: 'POST', body: {} }) || [] };
-  } catch (e) { return log('Marché : ' + e.message); }
+  try { await listMarket(); } catch (e) { return log('Marché : ' + e.message); }
   const catalog = catalogMap();
   for (const l of [...market.listings].sort((a, b) => a.price - b.price)) {
     if (planned.has(l.id)) continue;
@@ -701,13 +714,12 @@ async function buy(id) {
   if (quietNow(kvGet('market_quiet'))) return log(`Marché : pause, achat de ${name} reporté`);
   try {
     // Relu juste avant : l'annonce a pu partir, changer de prix, ou la routine être modifiée entre-temps.
-    const l = (await sb('/rest/v1/rpc/market_list', { method: 'POST', body: {} }) || []).find(x => x.id === id);
+    const l = (await listMarket()).find(x => x.id === id);
     if (!r || r.left <= 0 || !l || !matches(r, l, catalogMap().get(l.card))) return log(`Marché : ${name} n'est plus à prendre, achat annulé`);
     spent += l.price;
     try { await sb('/rest/v1/rpc/market_buy', { method: 'POST', body: { p_id: id } }); } catch (e) { spent -= l.price; throw e; }
     kvSet('routines', routines().map(x => x.id === r.id ? { ...x, left: x.left - 1 } : x));
-    kvSet('market_bought', [{ at: Date.now(), card: l.card, price: l.price, routine: r.id }, ...(kvGet('market_bought') || [])].slice(0, 50));
-    mineCache = null;
+    addBought({ card: l.card, price: l.price, routine: r.id });
     log(`Marché : ${name} acheté ${l.price} pièces`);
     lastProfile = await profile();
   } catch (e) { log(`Marché : achat de ${name} refusé : ${e.message}`); }
@@ -716,26 +728,107 @@ function saveRoutines(list) {
   const num = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi;
   if (!Array.isArray(list) || list.length > 50) return [400, { error: 'Liste de routines invalide.' }];
   const out = [];
-  for (const r of list) {
-    const ok = ROUTINE_KINDS.includes(r?.kind) && typeof r.value === 'string' && r.value && (r.kind !== 'rarity' || /^[0-6]$/.test(r.value))
-      && Number.isInteger(r.max) && r.max >= 1 && Number.isInteger(r.left) && num(r.left, 0, 1000)
+  const cond = k => COND_OPS[k?.f]?.includes(k.op) && (k.f === 'rarity' ? Number.isInteger(k.v) && num(k.v, 0, 6)
+    : k.f === 'price' ? Number.isInteger(k.v) && k.v >= 1 : typeof k.v === 'string' && k.v.length > 0);
+  for (const r of list.map(x => x && upgrade(x))) {
+    const ok = r && Array.isArray(r.where) && r.where.length >= 1 && r.where.length <= 20
+      // Garde-fou : chaque groupe OU porte son prix maximum, sinon une routine pourrait vider le compte.
+      && r.where.every(g => Array.isArray(g) && g.length >= 1 && g.length <= 10 && g.every(cond) && g.some(k => k.f === 'price'))
+      && Number.isInteger(r.left) && num(r.left, 0, 1000)
       && Array.isArray(r.delays) && r.delays.length >= 1 && r.delays.length <= 10
       && r.delays.every(d => num(d?.min, 0, 1440) && num(d.max, d.min, 1440) && num(d.pct, 0.01, 100));
-    if (!ok) return [400, { error: 'Routine invalide : cible, prix maximum, quantité et tranches de délai (min ≤ max, en minutes, poids > 0).' }];
-    out.push({ id: typeof r.id === 'string' && r.id ? r.id : crypto.randomUUID(), on: r.on !== false, kind: r.kind, value: r.value, max: r.max, left: r.left,
-      delays: r.delays.map(d => ({ min: d.min, max: d.max, pct: d.pct })) });
+    if (!ok) return [400, { error: 'Routine invalide : conditions (chaque groupe OU avec un prix maximum), quantité et tranches de délai (min ≤ max, en minutes, poids > 0).' }];
+    out.push({ id: typeof r.id === 'string' && r.id ? r.id : crypto.randomUUID(), on: r.on !== false, left: r.left,
+      where: r.where.map(g => g.map(k => ({ f: k.f, op: k.op, v: k.v }))), delays: r.delays.map(d => ({ min: d.min, max: d.max, pct: d.pct })) });
   }
   kvSet('routines', out);
   log(`Marché : ${out.length} routine${out.length > 1 ? 's' : ''} enregistrée${out.length > 1 ? 's' : ''}`);
   scanMarket();
   return [200, { ok: true, routines: out }];
 }
-function marketState() {
-  const catalog = catalogMap(), card = id => ({ id, ...catalog.get(id) });
+function addBought(b) {
+  kvSet('market_bought', [{ at: Date.now(), ...b }, ...(kvGet('market_bought') || [])].slice(0, 50));
+  mineCache = null;
+}
+
+// ---- Enchères : offre automatique juste avant la fin, au minimum accepté par le site, jamais au-delà du plafond ----
+// Le site prolonge de 2 min toute offre faite dans les 2 dernières minutes : on se réarme sur la nouvelle fin.
+const SNIPE_LEAD_MS = +process.env.SNIPE_LEAD_MS || 3000;
+const SNIPE_CHECK_MS = +process.env.SNIPE_CHECK_MS || 5000; // relecture après la fin pour connaître le gagnant
+const minBid = l => l.bid == null ? l.price : Math.max(l.bid + 1, Math.ceil(l.bid * 1.05)); // même règle que le site (mkNeed)
+const snipes = () => kvGet('snipes') || [];
+const snipeTimers = new Map();
+const setSnipe = (id, patch) => kvSet('snipes', snipes().map(s => s.id === id ? { ...s, ...patch } : s));
+function armSnipe(s) {
+  clearTimeout(snipeTimers.get(s.id));
+  if (s.status !== 'wait') return snipeTimers.delete(s.id);
+  const at = Date.parse(s.ends_at) + (s.leading ? SNIPE_CHECK_MS : -SNIPE_LEAD_MS);
+  snipeTimers.set(s.id, setTimeout(() => fireSnipe(s.id), Math.min(Math.max(0, at - Date.now()), 2 ** 31 - 1)));
+}
+async function fireSnipe(id) {
+  const s = snipes().find(x => x.id === id);
+  if (!s || s.status !== 'wait') return;
+  const name = catalogMap().get(s.card)?.name || s.card;
+  const end = (status, msg) => {
+    setSnipe(id, { status });
+    log(`Enchère ${name} : ${msg}`);
+    if (status === 'won') addBought({ card: s.card, price: s.bid, auction: true });
+  };
+  let l;
+  try { l = (await listMarket()).find(x => x.id === id); } catch (e) {
+    log(`Enchère ${name} : lecture impossible (${e.message})`);
+    if (Date.parse(s.ends_at) > Date.now()) return setTimeout(() => fireSnipe(id), 1000);
+    return end('error', 'fin manquée');
+  }
+  // Disparue ou échue : gagnée si on menait au dernier passage.
+  if (!l || (l.status ?? 'active') !== 'active' || Date.parse(l.ends_at) <= Date.now()) {
+    const won = l ? !!l.leading : s.leading;
+    return end(won ? 'won' : 'lost', won ? `gagnée à ${s.bid} pièces` : 'perdue');
+  }
+  const cur = { ends_at: l.ends_at, leading: !!l.leading, current: l.bid ?? null };
+  if (l.leading || Date.parse(l.ends_at) - Date.now() > SNIPE_LEAD_MS + 1000) { setSnipe(id, cur); return armSnipe({ ...s, ...cur }); }
+  const need = minBid(l);
+  if (need > s.max) return end('over', `offre minimum ${need} au-dessus du plafond ${s.max}`);
+  spent += need;
+  try {
+    const r = await sb('/rest/v1/rpc/market_bid', { method: 'POST', body: { p_id: id, p_amount: need } });
+    const next = { ...cur, leading: true, bid: need, current: need, ends_at: r?.ends_at || l.ends_at };
+    setSnipe(id, next);
+    log(`Enchère ${name} : offre de ${need} pièces (plafond ${s.max})`);
+    armSnipe({ ...s, ...next });
+  } catch (e) {
+    spent -= need;
+    log(`Enchère ${name} : offre refusée (${e.message})`);
+    if (Date.parse(l.ends_at) > Date.now() + 500) setTimeout(() => fireSnipe(id), 500); else end('error', 'offre refusée à la fin');
+  }
+}
+async function saveSnipe({ id, max }) {
+  if (max == null) { // retrait
+    clearTimeout(snipeTimers.get(id));
+    kvSet('snipes', snipes().filter(s => s.id !== id));
+    return [200, { ok: true }];
+  }
+  const l = (await listMarket()).find(x => x.id === id);
+  if (!l || l.kind !== 'enchere' || l.mine || Date.parse(l.ends_at) <= Date.now()) return [400, { error: 'Cette enchère n\'est plus disponible.' }];
+  if (!Number.isInteger(max) || max < minBid(l)) return [400, { error: `Plafond trop bas : l'offre minimum est de ${minBid(l)} pièces.` }];
+  const old = snipes().find(s => s.id === id);
+  const s = { id, card: l.card, max, ends_at: l.ends_at, leading: !!l.leading, current: l.bid ?? null, bid: old?.bid ?? (l.leading ? l.bid : null), status: 'wait', at: old?.at ?? Date.now() };
+  kvSet('snipes', [s, ...snipes().filter(x => x.id !== id)].slice(0, 100));
+  armSnipe(s);
+  log(`Enchère ${catalogMap().get(l.card)?.name || l.card} : plafond ${max} pièces`);
+  return [200, { ok: true }];
+}
+
+async function marketState() {
+  if (kvGet('session') && Date.now() - market.at >= MARKET_CACHE_MS) await listMarket().catch(e => log('Marché : ' + e.message));
+  const catalog = catalogMap(), card = id => ({ id, ...catalog.get(id) }), open = market.listings.filter(l => !l.mine && (l.status ?? 'active') === 'active');
   return {
     at: market.at, every: MARKET_MS, routines: routines(),
     quiet: kvGet('market_quiet') || { on: false, from: '23:00', to: '07:00' }, quietNow: quietNow(kvGet('market_quiet')),
-    listings: market.listings.filter(l => l.kind === 'fixe' && !l.mine).map(l => ({ id: l.id, price: l.price, seller: l.seller_name, card: card(l.card), planned: planned.get(l.id)?.at ?? null })),
+    listings: open.filter(l => l.kind === 'fixe').map(l => ({ id: l.id, price: l.price, seller: l.seller_name, card: card(l.card), planned: planned.get(l.id)?.at ?? null })),
+    auctions: open.filter(l => l.kind === 'enchere').map(l => ({ id: l.id, price: l.price, bid: l.bid ?? null, bids: l.bids || 0, need: minBid(l), leading: !!l.leading,
+      ends_at: l.ends_at, seller: l.seller_name, card: card(l.card) })),
+    snipes: snipes().map(s => ({ ...s, card: card(s.card) })),
     bought: (kvGet('market_bought') || []).map(b => ({ ...b, card: card(b.card) })),
     cards: [...catalog.values()].map(c => [c.id, c.name, c.licence, c.rarity]),
   };
@@ -819,7 +912,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/pending') return send(200, await pendingTrades(url.searchParams.get('all') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/collection') return send(200, await collection());
-    if (req.method === 'GET' && url.pathname === '/api/market') return send(200, marketState());
+    if (req.method === 'GET' && url.pathname === '/api/market') return send(200, await marketState());
     if (req.method === 'POST') {
       // Un autre site ne peut pas envoyer ce Content-Type sans préflight : protège contre le CSRF.
       if (req.headers['content-type'] !== 'application/json') return send(415, { error: 'JSON attendu' });
@@ -838,6 +931,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/pending/respond') return send(...await respondTrade(body));
       if (url.pathname === '/api/recycle') return send(...await startRecycle(body));
       if (url.pathname === '/api/routines') return send(...saveRoutines(body.routines));
+      if (url.pathname === '/api/snipes') return send(...await saveSnipe(body));
       if (url.pathname === '/api/quiet' || url.pathname === '/api/market/quiet') { // deux pauses indépendantes : boosters et marché
         const q = { on: body.on === true, from: body.from, to: body.to }, mkt = url.pathname !== '/api/quiet';
         if (!HHMM.test(q.from) || !HHMM.test(q.to)) return send(400, { error: 'Heures attendues au format HH:MM' });
@@ -858,4 +952,5 @@ const server = http.createServer(async (req, res) => {
 schedule();
 setInterval(statsPass, STATS_MS).unref();
 setInterval(scanMarket, MARKET_MS).unref();
+snipes().forEach(armSnipe);
 server.listen(PORT, () => { console.log(`Surcouche Aevyz sur le port ${PORT}`); pass(); scanMarket(); });

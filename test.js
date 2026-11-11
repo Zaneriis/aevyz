@@ -98,6 +98,15 @@ const fake = http.createServer((req, res) => {
       game.listings = game.listings.filter(x => x !== l);
       return json({ coins: game.profile.coins, card: l.card });
     }
+    if (p === '/rest/v1/rpc/market_bid') {
+      const { p_id, p_amount } = JSON.parse(body), l = (game.listings || []).find(x => x.id === p_id);
+      (game.bids ||= []).push([p_id, p_amount]);
+      const need = l.bid == null ? l.price : Math.max(l.bid + 1, Math.ceil(l.bid * 1.05));
+      if (p_amount < need) return json({ message: 'Offre minimum : ' + need }, 400);
+      Object.assign(l, { bid: p_amount, bids: l.bids + 1, leading: true });
+      if (Date.parse(l.ends_at) - Date.now() < 600) l.ends_at = iso(-600); // prolongation, à l'échelle du test
+      return json({ coins: game.profile.coins, bid: p_amount, ends_at: l.ends_at });
+    }
     if (p.startsWith('/rest/v1/rpc/trade_')) { game.tradeWrites = (game.tradeWrites || 0) + 1; return json({}); }
     if (p === '/rest/v1/rpc/open_booster') {
       const a = JSON.parse(body);
@@ -124,7 +133,7 @@ const until = async (fn, what) => {
   assert.fail('Délai dépassé : ' + what);
 };
 const settled = async () => { await sleep(100); await until(async () => !(await state()).running, 'fin du passage'); };
-const env = { ...process.env, PASSWORD: PASS, PORT: String(APP), DATA_DIR: dir, AEVYZ_ORIGIN: `http://127.0.0.1:${FAKE}`, OPEN_DELAY_MS: '0', INTERVAL_MIN: '60', STATS_READS: '0', DELAY_UNIT_MS: '100' };
+const env = { ...process.env, PASSWORD: PASS, PORT: String(APP), DATA_DIR: dir, AEVYZ_ORIGIN: `http://127.0.0.1:${FAKE}`, OPEN_DELAY_MS: '0', INTERVAL_MIN: '60', STATS_READS: '0', DELAY_UNIT_MS: '100', SNIPE_LEAD_MS: '300', SNIPE_CHECK_MS: '200', MARKET_CACHE_MS: '0' };
 let app;
 const start = async () => {
   app = spawn(process.execPath, [path.join(__dirname, 'server.js')], { env, stdio: ['ignore', 'ignore', 'inherit'] });
@@ -439,6 +448,8 @@ const start = async () => {
     [[ME, true, 1, 2, 2, 2], ['lui', false, 2, 1, 1, 3], ['prive', false, 4, 4, 3, 1]], 'moi sous mon id, profils masqués écartés, une place par classement');
   const luiStats = await (await api('/api/stats/player?id=lui')).json();
   assert.deepStrictEqual(luiStats.rarity.map(r => r.counts), [[2, 0, 2, 1, 0, 0, 0]], 'cartes uniques par rareté, carte inconnue ignorée');
+  assert.deepStrictEqual(luiStats.dupes, [[1, 1], [0, 0], [1, 1], [0, 0], [0, 0], [0, 0], [0, 0]], 'doublons par rareté : cartes en double, exemplaires en trop');
+  assert.deepStrictEqual((await (await api('/api/stats/player?id=' + ME)).json()).dupes.slice(0, 3), [[1, 2], [0, 0], [1, 1]], 'mes doublons');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
   assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes du catalogue par rareté, alternatives comprises');
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [
@@ -506,17 +517,26 @@ const start = async () => {
     { id: 4, card: 'c1', kind: 'enchere', price: 1, mine: false, status: 'active' }, // enchère
     { id: 5, card: 'c1', kind: 'fixe', price: 1, mine: true, status: 'active' }, // la mienne
     { id: 6, card: 'c3', kind: 'fixe', price: 1, mine: false, status: 'active' }, // autre licence
+    { id: 9, card: 'c1', kind: 'fixe', price: 36, mine: false, status: 'active' }, // Doom commune, au-dessus du prix des communes
   ];
-  const routine = { kind: 'licence', value: 'Doom', max: 50, left: 2, delays: [{ min: 0, max: 1, pct: 40 }, { min: 1, max: 2, pct: 60 }] };
+  // (Doom ET Légendaire ET prix ≤ 45) OU (Doom ET rareté ≤ Peu commune ET prix ≤ 35) : un prix par rareté.
+  const doom = (rar, op, price) => [{ f: 'licence', op: '=', v: 'Doom' }, { f: 'rarity', op, v: rar }, { f: 'price', op: '<=', v: price }];
+  const routine = { where: [doom(4, '=', 45), doom(1, '<=', 35)], left: 3, delays: [{ min: 0, max: 1, pct: 40 }, { min: 1, max: 2, pct: 60 }] };
   assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, delays: [{ min: 5, max: 1, pct: 10 }] }] })).status, 400, 'tranche min > max refusée');
-  assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, max: 0 }] })).status, 400, 'prix max nul refusé');
+  assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, where: [doom(4, '=', 0)] }] })).status, 400, 'prix max nul refusé');
+  assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, where: [doom(4, '=', 45), [{ f: 'licence', op: '=', v: 'Doom' }]] }] })).status, 400, 'groupe sans prix maximum refusé');
+  assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, where: [[{ f: 'rarity', op: '>', v: 1 }, { f: 'price', op: '<=', v: 9 }]] }] })).status, 400, 'opérateur inconnu refusé');
+  const legacy = await (await post('/api/routines', { routines: [{ kind: 'rarity', value: '4', max: 7, left: 0, delays: routine.delays }] })).json();
+  assert.deepStrictEqual(legacy.routines[0].where, [[{ f: 'rarity', op: '=', v: 4 }, { f: 'price', op: '<=', v: 7 }]], 'ancien format converti');
   assert.strictEqual((await post('/api/routines', { routines: [routine] })).status, 200);
   await until(async () => (game.bought || []).length >= 2, 'achats des routines');
   await sleep(200);
-  assert.deepStrictEqual(game.bought.sort(), [1, 2], 'seulement les annonces correspondantes, deux au plus');
+  assert.deepStrictEqual(game.bought.sort(), [1, 2], 'seulement les annonces correspondant à un groupe');
   let m = await (await api('/api/market')).json();
-  assert.strictEqual(m.routines[0].left, 0, 'quantité épuisée');
+  assert.strictEqual(m.routines[0].left, 1, 'quantité décomptée');
   assert.strictEqual(m.bought.length, 2);
+  assert.strictEqual((await state()).boughtAt.length, 2, 'pastille du marché');
+  m.routines[0].left = 0;
   game.listings.push({ id: 7, card: 'c1', kind: 'fixe', price: 10, mine: false, status: 'active' });
   await post('/api/routines', { routines: m.routines });
   await sleep(300);
@@ -539,12 +559,42 @@ const start = async () => {
   // Modifier une routine garde son identifiant ; la fin de la pause relance le scan.
   const id = m.routines[0].id;
   await post('/api/market/quiet', { on: false, from: '23:00', to: '07:00' });
-  await post('/api/routines', { routines: [{ ...m.routines[0], max: 5 }] });
+  await post('/api/routines', { routines: [{ ...m.routines[0], where: [doom(4, '=', 5), doom(1, '<=', 5)] }] });
   await sleep(500);
   m = await (await api('/api/market')).json();
   assert.strictEqual(m.routines[0].id, id, 'même routine après modification');
   assert.strictEqual(game.bought.length, 2, 'prix max abaissé : plus de correspondance');
   await post('/api/routines', { routines: [] });
+
+  // Enchères : offre au minimum du site (+5 %, au moins +1) juste avant la fin, relance si dépassé, jamais au-dessus du plafond.
+  const soon = ms => new Date(Date.now() + ms).toISOString();
+  game.listings = [
+    { id: 20, card: 'c2', kind: 'enchere', price: 10, bid: 50, bids: 1, leading: false, mine: false, status: 'active', ends_at: soon(1500) },
+    { id: 21, card: 'c3', kind: 'enchere', price: 100, bid: null, bids: 0, leading: false, mine: false, status: 'active', ends_at: soon(1500) },
+  ];
+  game.bids = [];
+  m = await (await api('/api/market')).json();
+  assert.deepStrictEqual(m.auctions.map(a => [a.id, a.need]), [[20, 53], [21, 100]], 'enchères et offre minimum');
+  assert.strictEqual((await post('/api/snipes', { id: 20, max: 52 })).status, 400, 'plafond sous le minimum refusé');
+  assert.strictEqual((await post('/api/snipes', { id: 20, max: 60 })).status, 200);
+  assert.strictEqual((await post('/api/snipes', { id: 21, max: 104 })).status, 200);
+  assert.strictEqual(game.bids.length, 0, 'rien avant la fin');
+  await until(async () => game.bids.length >= 2, 'offres juste avant la fin');
+  assert.deepStrictEqual(game.bids.slice().sort((a, b) => a[0] - b[0]), [[20, 53], [21, 100]], 'offre minimum, pas le plafond');
+  const a20 = game.listings.find(l => l.id === 20), a21 = game.listings.find(l => l.id === 21);
+  Object.assign(a20, { bid: 57, leading: false, ends_at: soon(2500) }); // quelqu'un repasse devant, l'enchère est prolongée
+  Object.assign(a21, { bid: 101, leading: false, ends_at: soon(2500) }); // minimum 107 > plafond 104
+  await until(async () => game.bids.length >= 3, 'surenchère');
+  assert.deepStrictEqual(game.bids[2], [20, 60], 'surenchère au minimum suivant');
+  await until(async () => (await (await api('/api/market')).json()).snipes.find(s => s.id === 21).status === 'over', 'plafond dépassé');
+  game.listings = game.listings.filter(l => l.id !== 20); // fin de l'enchère 20 : je menais
+  await until(async () => (await (await api('/api/market')).json()).snipes.find(s => s.id === 20).status === 'won', 'enchère gagnée');
+  m = await (await api('/api/market')).json();
+  assert.deepStrictEqual([m.bought[0].card.id, m.bought[0].price, m.bought[0].auction], ['c2', 60, true], 'enchère gagnée dans les achats');
+  assert.strictEqual(game.bids.length, 3, "pas d'offre au-delà du plafond");
+  await post('/api/snipes', { id: 20, max: null });
+  assert.ok(!(await (await api('/api/market')).json()).snipes.some(s => s.id === 20), 'enchère effacée');
+  game.listings = [];
 
   // Connexion Discord (PKCE) : redirection vers Supabase, puis code collé ou renvoyé sur la surcouche, utilisable une seule fois.
   assert.strictEqual((await api('/api/login?back=javascript:alert(1)')).status, 400);

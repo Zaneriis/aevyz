@@ -291,6 +291,14 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .mkroutines small{color:var(--muted)}
 .mkroutines .acts{margin-top:4px}
 @media(max-width:940px){.mkt{grid-template-columns:minmax(0,1fr)}}
+.mkgroup{border:1px solid var(--line);border-radius:10px;padding:8px;display:grid;gap:5px}
+.mkgroup+.mkgroup{margin-top:22px;position:relative}
+.mkgroup+.mkgroup::before{content:'OU';position:absolute;top:-19px;left:8px;font-size:.75rem;font-weight:800;color:var(--accent)}
+.mkcond{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:5px;align-items:center}
+.mkcond select,.mkcond input,.mksel,.envy td input{min-width:0;background:#0005;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:4px 6px;font:inherit}
+.envy td input{width:90px}
+.envy tr.new td{background:#ffc83d14}
+.envy tr.new td:first-child{box-shadow:inset 3px 0 var(--accent)}
 </style>
 </head>
 <body>
@@ -325,7 +333,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
     <a href="#boosters">Boosters</a>
     <a href="#echanges">Échanges<mark class="pbadge" data-pending hidden></mark></a>
     <a href="#recyclage">Recyclage</a>
-    <a href="#marche">Marché</a>
+    <a href="#marche">Marché<mark class="pbadge" id="mkBadge" hidden></mark></a>
     <a href="#stats">Stats</a>
   </nav>
 
@@ -479,9 +487,25 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
   </div>
 
   <div id="viewMarket" hidden>
-    <section class="recy mkt">
+    <nav class="tabs subtabs" aria-label="Marché">
+      <a href="#marche">Prix fixe</a>
+      <a href="#marche-encheres">Enchères</a>
+    </nav>
+    <section id="subMkAuctions">
+      <h2>Enchères programmées</h2>
+      <p class="xnote">Quelques secondes avant la fin, si quelqu'un d'autre mène et que l'offre minimum ne dépasse pas ton plafond, la surcouche enchérit du minimum accepté par le site : l'offre actuelle + 5 % (au moins +1 pièce). Une offre dans les 2 dernières minutes prolonge l'enchère de 2 minutes : elle recommence alors à la nouvelle fin. Ne dépend pas de la pause du marché.</p>
+      <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Carte</th><th>Plafond</th><th>Offre actuelle</th><th>Fin</th><th>État</th><th></th></tr></thead><tbody id="snList"></tbody></table></div>
+      <div class="xhead" style="margin-top:22px"><h2>Enchères en cours</h2>
+        <input type="search" id="aucSearch" placeholder="Carte ou licence" aria-label="Chercher une enchère" style="width:auto"></div>
+      <p class="xnote" id="aucInfo"></p>
+      <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Carte</th><th>Licence</th><th>Offre actuelle</th><th>Minimum</th><th>Fin dans</th><th>Vendeur</th><th>Mon plafond</th></tr></thead><tbody id="aucList"></tbody></table></div>
+    </section>
+    <section class="recy mkt" id="subMkFixed">
       <div>
-        <div class="xhead"><h2>Annonces à prix fixe</h2>
+        <div class="xhead"><h2>Achats <span id="mkNew" class="xnote"></span></h2>
+          <select id="mkBoughtShow" aria-label="Achats affichés" class="mksel"><option value="10">10 derniers</option><option value="all">Tous</option></select></div>
+        <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Date</th><th>Carte</th><th>Prix</th><th>Origine</th></tr></thead><tbody id="mkBought"></tbody></table></div>
+        <div class="xhead" style="margin-top:22px"><h2>Annonces à prix fixe</h2>
           <form class="quiet" id="mkQuietForm" title="Ni scan ni achat du marché pendant cette tranche horaire (heure du serveur). Indépendante de la pause des boosters.">
             <label><input type="checkbox" id="mkQuietOn"> Pause du marché de</label>
             <input type="time" id="mkQuietFrom" aria-label="Début de la pause du marché" required> à
@@ -490,16 +514,15 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
           </form></div>
         <p class="xnote" id="mkInfo"></p>
         <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Carte</th><th>Licence</th><th>Prix</th><th>Vendeur</th><th>Routine</th></tr></thead><tbody id="mkList"></tbody></table></div>
-        <h2 style="margin-top:22px">Achats des routines</h2>
-        <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Date</th><th>Carte</th><th>Prix</th></tr></thead><tbody id="mkBought"></tbody></table></div>
       </div>
       <aside class="summary">
         <form class="glass panel rfilters" id="mkForm" style="margin:0">
           <h3 style="grid-column:1/-1" id="mkFormTitle">Nouvelle routine</h3>
-          <label>Cible<select id="mkKind"><option value="card">Carte</option><option value="licence">Licence</option><option value="rarity">Rareté</option></select></label>
-          <label id="mkValueBox">Carte<input type="search" id="mkValue" list="mkOptions" autocomplete="off" required></label>
-          <label id="mkRarityBox" hidden>Rareté<select id="mkRarity"></select></label>
-          <label>Prix maximum<input type="number" id="mkMax" min="1" required></label>
+          <div style="grid-column:1/-1">
+            <span class="ftitle">Conditions : toutes celles d'un groupe (ET), un seul groupe suffit (OU)</span>
+            <div id="mkWhere"></div>
+            <button class="ghost" type="button" id="mkAddGroup" style="margin-top:6px">+ Groupe OU</button>
+          </div>
           <label>Quantité à acheter<input type="number" id="mkLeft" min="1" max="1000" value="1" required></label>
           <div style="grid-column:1/-1">
             <span class="ftitle">Délai avant l'achat (minutes, chance)</span>
@@ -512,7 +535,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
         </form>
         <div class="glass panel"><h3>Routines</h3><ul id="mkRoutines" class="mkroutines"></ul></div>
       </aside>
-      <datalist id="mkOptions"></datalist>
+      <datalist id="mkCardOpts"></datalist><datalist id="mkLicOpts"></datalist>
     </section>
   </div>
 
@@ -775,6 +798,7 @@ function renderState() {
   $('quietNow').hidden = !S.quietNow;
   renderHud();
   renderPacks();
+  paintMkBadge();
 }
 async function refresh() {
   const saved = S && S.saved;
@@ -1319,9 +1343,10 @@ document.addEventListener('click', e => { if (!$('notif').contains(e.target)) $(
 // ---- Statistiques : graphiques en SVG, une courbe à la fois ----
 const activeText = at => at ? 'actif il y a ' + ago(Date.now() - at) : 'activité inconnue';
 // Courbe en escalier : une valeur ne change qu'au relevé suivant. invert : 1 en haut (classement).
-function lineChart(points, {color = '#FFC83D', invert = false} = {}) {
+function lineChart(points, {color = '#FFC83D', invert = false, from = 0} = {}) {
   const box = el('div', {className: 'chart'});
-  const pts = points.filter(p => p[1] != null);
+  let pts = points.filter(p => p[1] != null);
+  if (from) { const before = pts.filter(p => p[0] < from).at(-1); pts = (before ? [[from, before[1]]] : []).concat(pts.filter(p => p[0] >= from)); }
   if (pts.length < 2 && !(pts.length === 1 && Date.now() - pts[0][0] > 6e5)) { box.append(el('p', {className: 'xnote', textContent: pts.length ? 'Pas encore assez de relevés : la courbe se dessine au fil des passages (toutes les 5 min).' : 'Pas de donnée pour ce joueur.'})); return box; }
   const data = pts.concat([[Date.now(), pts.at(-1)[1]]]);
   const W = 640, H = 220, L = 44, Rr = 12, T = 12, B = 26;
@@ -1365,13 +1390,16 @@ function lineChart(points, {color = '#FFC83D', invert = false} = {}) {
 let chartPick = {};
 function chartCard(id, title, series) {
   const slot = el('div');
-  const show = key => { chartPick[id] = key; const s = series.find(x => x.key === key) || series[0]; slot.replaceChildren(lineChart(s.points, s)); };
+  const show = key => { chartPick[id] = key; const s = series.find(x => x.key === key) || series[0]; slot.replaceChildren(lineChart(s.points, {...s, from: statsRange && Date.now() - statsRange})); };
   const tabs = el('div', {className: 'modes', role: 'radiogroup', ariaLabel: title}, ...series.map(s => el('label', {},
     el('input', {type: 'radio', name: 'chart-' + id, value: s.key, checked: s.key === (chartPick[id] || series[0].key), onchange: () => show(s.key)}), s.label)));
   show(chartPick[id] || series[0].key);
   return el('article', {className: 'glass chartbox'}, el('div', {className: 'xhead'}, el('h3', {textContent: title}), tabs), slot);
 }
-let statsRows = null, statsSel = null, statsSeq = 0;
+let statsRows = null, statsSel = null, statsSeq = 0, statsRange = 0, statsData = null;
+const RANGES = [[DAY, '24 h'], [3 * DAY, '3 j'], [7 * DAY, '7 j'], [30 * DAY, '1 mois'], [0, 'Max']];
+const rangePick = () => el('div', {className: 'modes', role: 'radiogroup', ariaLabel: 'Période des graphiques'}, ...RANGES.map(([ms, label]) => el('label', {},
+  el('input', {type: 'radio', name: 'statsRange', value: ms, checked: ms === statsRange, onchange: () => { statsRange = ms; renderStatsPlayer(); }}), label)));
 function renderStatsList() {
   const q = $('stSearch').value.trim().toLowerCase();
   const rows = (statsRows || []).filter(p => (p.name || '').toLowerCase().includes(q)).sort((a, b) => b.me - a.me);
@@ -1405,7 +1433,8 @@ function rarityProgress(d) {
         el('span', {className: 'rar', textContent: name}),
         el('b', {textContent: `${have.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}`}),
         el('i', {}, el('i', {style: `width:${pct}%`})),
-        el('small', {className: missing ? '' : 'done', textContent: total ? missing ? `${Math.round(pct)} % · il en manque ${missing.toLocaleString('fr-FR')}` : 'complet ✓' : '–'}));
+        el('small', {className: missing ? '' : 'done', textContent: total ? missing ? `${Math.round(pct)} % · il en manque ${missing.toLocaleString('fr-FR')}` : 'complet ✓' : '–'}),
+        ...(d.dupes ? [el('small', {textContent: d.dupes[i][0] ? `${plural(d.dupes[i][0], 'carte')} en double · ${plural(d.dupes[i][1], 'exemplaire')} en trop` : 'aucun doublon'})] : []));
     })));
 }
 async function loadStatsPlayer() {
@@ -1414,6 +1443,12 @@ async function loadStatsPlayer() {
   chartPick.rar ??= 'r4'; // Légendaire par défaut
   const seq = ++statsSeq, d = await getJson('api/stats/player?id=' + encodeURIComponent(p.id));
   if (seq !== statsSeq) return;
+  statsData = {p, d};
+  renderStatsPlayer();
+}
+function renderStatsPlayer() {
+  if (!statsData) return;
+  const {p, d} = statsData;
   const col = k => d.snaps.map(s => [s.at, s[k]]);
   const n = v => v == null ? '–' : v.toLocaleString('fr-FR');
   $('stBody').replaceChildren(
@@ -1422,6 +1457,7 @@ async function loadStatsPlayer() {
     el('div', {className: 'tiles'}, stat('Cartes', n(p.total)), stat('Uniques', n(p.uniq)), stat('Boosters', n(p.opened)), stat('Mythiques', n(p.mythics)),
       stat('Classement uniques', p.pos_uniq ? '#' + p.pos_uniq : '–'), stat('Total', p.pos_total ? '#' + p.pos_total : '–'), stat('Boosters', p.pos_opened ? '#' + p.pos_opened : '–'), stat('Mythiques', p.pos_myth ? '#' + p.pos_myth : '–')),
     rarityProgress(d),
+    el('div', {className: 'xhead'}, el('h3', {textContent: 'Période des graphiques'}), rangePick()),
     chartCard('col', 'Collection', [
       {key: 'total', label: 'Cartes totales', points: col('total')}, {key: 'uniq', label: 'Uniques', points: col('uniq')},
       {key: 'opened', label: 'Boosters', points: col('opened')}, {key: 'mythics', label: 'Mythiques', points: col('mythics')}]),
@@ -1455,8 +1491,48 @@ $('lvSort').onchange = renderEnvy;
 
 // ---- Marché : routines d'achat, enregistrées côté serveur ----
 let mk = null;
-const mkTarget = r => r.kind === 'rarity' ? RARITIES[r.value] : r.kind === 'licence' ? 'Licence ' + r.value : (mk.cards.find(c => c[0] === r.value) || [, r.value])[1];
+const FIELDS = {licence: 'Licence', rarity: 'Rareté', card: 'Carte', price: 'Prix'};
+const OPS = {licence: ['=', '!='], rarity: ['=', '!=', '>=', '<='], card: ['=', '!='], price: ['<=']};
+const OP_TXT = {'=': '=', '!=': '≠', '>=': '≥', '<=': '≤'};
 const mkCardLabel = c => `${c[1]} · ${c[2] || '?'} · ${RARITIES[c[3]] ?? ''}`;
+const condVal = k => k.f === 'rarity' ? RARITIES[k.v] : k.f === 'card' ? (mk.cards.find(c => c[0] === k.v) || [, k.v])[1] : k.f === 'price' ? k.v.toLocaleString('fr-FR') : k.v;
+const whereText = w => w.map(g => (w.length > 1 ? '(' : '') + g.map(k => `${FIELDS[k.f]} ${OP_TXT[k.op]} ${condVal(k)}`).join(' ET ') + (w.length > 1 ? ')' : '')).join(' OU ');
+const sel = (opts, value, label) => { const s = el('select', {}, ...opts.map(([v, t]) => el('option', {value: v, textContent: t}))); s.value = value; s.setAttribute('aria-label', label); return s; };
+function condRow(k = {f: 'licence', op: '=', v: ''}) {
+  const field = sel(Object.entries(FIELDS), k.f, 'Champ'), row = el('div', {className: 'mkcond'});
+  const build = v => {
+    const f = field.value, op = sel(OPS[f].map(o => [o, OP_TXT[o]]), OPS[f].includes(k.op) ? k.op : OPS[f][0], 'Opérateur');
+    const card = f === 'card' && mk.cards.find(c => c[0] === v);
+    const val = f === 'rarity' ? sel(RARITIES.map((r, i) => [i, r]), v ?? 4, 'Rareté')
+      : el('input', f === 'price' ? {type: 'number', min: 1, value: v ?? '', placeholder: 'pièces'} : {type: 'search', autocomplete: 'off', value: card ? mkCardLabel(card) : v ?? '', placeholder: FIELDS[f]});
+    if (f === 'card' || f === 'licence') val.setAttribute('list', f === 'card' ? 'mkCardOpts' : 'mkLicOpts');
+    val.required = true;
+    row.replaceChildren(field, op, val, el('button', {type: 'button', className: 'ghost', textContent: '✕', title: 'Retirer la condition', onclick: () => {
+      const g = row.parentNode; row.remove(); if (!g.querySelector('.mkcond')) g.remove(); }}));
+  };
+  field.onchange = () => build();
+  build(k.v);
+  return row;
+}
+function groupEl(g = [{f: 'licence', op: '=', v: ''}, {f: 'rarity', op: '=', v: 4}, {f: 'price', op: '<=', v: ''}]) {
+  const box = el('div', {className: 'mkgroup'}, ...g.map(condRow));
+  box.append(el('button', {type: 'button', className: 'ghost', textContent: '+ ET', title: 'Ajouter une condition à ce groupe', onclick: e => e.target.before(condRow())}));
+  return box;
+}
+// Lit le formulaire ; renvoie une erreur lisible plutôt que d'envoyer une condition inconnue.
+function readWhere() {
+  const where = [...$('mkWhere').children].map(g => [...g.querySelectorAll('.mkcond')].map(r => {
+    const [f, op, val] = r.querySelectorAll('select, input'), v = val.value.trim();
+    if (f.value === 'rarity') return {f: 'rarity', op: op.value, v: +v};
+    if (f.value === 'price') { const n = Math.floor(+v); if (!(n >= 1)) throw new Error('Prix : un nombre de pièces est attendu.'); return {f: 'price', op: op.value, v: n}; }
+    if (f.value === 'card') { const c = mk.cards.find(c => mkCardLabel(c) === v) || mk.cards.find(c => c[1] === v); if (!c) throw new Error(`Carte inconnue : « ${v} ». Choisis-la dans la liste.`); return {f: 'card', op: op.value, v: c[0]}; }
+    if (!mk.cards.some(c => c[2] === v)) throw new Error(`Licence inconnue : « ${v} ».`);
+    return {f: 'licence', op: op.value, v};
+  }));
+  if (!where.length) throw new Error('Ajoute au moins un groupe de conditions.');
+  if (where.some(g => !g.some(k => k.f === 'price'))) throw new Error('Chaque groupe OU doit avoir un prix maximum (Prix ≤).');
+  return where;
+}
 function delayRow(d = {min: 1, max: 5, pct: 50}) {
   const n = (v, label) => { const i = el('input', {type: 'number', min: 0, max: 1440, step: 'any', value: v, required: true, oninput: mkPct}); i.setAttribute('aria-label', label); return i; };
   return el('div', {}, n(d.min, 'De (min)'), 'à', n(d.max, 'À (min)'), n(d.pct, 'Chance (%)'),
@@ -1467,39 +1543,89 @@ function mkPct() {
   const sum = mkDelays().reduce((s, d) => s + d.pct, 0);
   $('mkPct').textContent = `Total : ${Math.round(sum * 100) / 100} %` + (Math.abs(sum - 100) > .01 ? ' (ramené à 100 % proportionnellement)' : '');
 }
+// Achats vus : la pastille compte ceux arrivés depuis ta dernière visite de l'onglet (mémorisé dans ce navigateur).
+let mkSeenAt = (() => { try { return +localStorage.getItem('aevyz-mk-seen') || 0; } catch { return 0; } })() || Date.now(), mkNewSince = null;
+function setMkSeen(t) { mkSeenAt = t; try { localStorage.setItem('aevyz-mk-seen', t); } catch {} }
+function paintMkBadge() {
+  if (!$('viewMarket').hidden) setMkSeen(Date.now());
+  const n = ((S && S.boughtAt) || []).filter(t => t > mkSeenAt).length;
+  $('mkBadge').hidden = !n; $('mkBadge').textContent = n; $('mkBadge').title = `${n} nouvel${n > 1 ? 's' : ''} achat${n > 1 ? 's' : ''} sur le marché`;
+}
+const cardTd = c => el('td', {textContent: c.name || c.id, style: `color:${RCOL[c.rarity] || 'inherit'}`});
+const coins = n => n == null ? '–' : n.toLocaleString('fr-FR');
+function renderBought() {
+  const isNew = b => mkNewSince != null && b.at > mkNewSince, fresh = mk.bought.filter(isNew).length;
+  // 10 derniers par défaut, mais tous les nouveaux s'il y en a plus.
+  const list = $('mkBoughtShow').value === 'all' ? mk.bought : mk.bought.slice(0, Math.max(10, fresh));
+  $('mkNew').textContent = fresh ? `(${fresh} nouvea${fresh > 1 ? 'ux' : 'u'})` : '';
+  const rname = id => { const r = mk.routines.find(x => x.id === id); return r ? whereText(r.where) : 'routine supprimée'; };
+  $('mkBought').replaceChildren(...(list.length ? list.map(b => el('tr', {className: isNew(b) ? 'new' : ''}, el('td', {textContent: time(b.at)}), cardTd(b.card),
+    el('td', {textContent: coins(b.price)}), el('td', {className: 'xnote', textContent: b.auction ? 'Enchère gagnée' : rname(b.routine)})))
+    : [el('tr', {}, el('td', {colSpan: 4, className: 'xnote', textContent: 'Rien acheté pour l\'instant.'}))]));
+}
 function renderMarket() {
-  const rname = id => { const r = mk.routines.find(x => x.id === id); return r ? mkTarget(r) : '–'; };
-  const cardTd = c => el('td', {textContent: c.name || c.id, style: `color:${RCOL[c.rarity] || 'inherit'}`});
   if (!$('mkQuietForm').contains(document.activeElement)) { $('mkQuietOn').checked = mk.quiet.on; $('mkQuietFrom').value = mk.quiet.from; $('mkQuietTo').value = mk.quiet.to; }
   $('mkQuietNow').hidden = !mk.quietNow;
-  $('mkInfo').textContent = mk.at ? `Relu à ${time(mk.at)} · toutes les ${mk.every / MIN} min, seulement si une routine est active` : 'Pas encore lu : le marché est scanné dès qu\'une routine est active.';
+  $('mkInfo').textContent = mk.at ? `Relu à ${time(mk.at)} · scan des routines toutes les ${mk.every / MIN} min, seulement si une routine est active` : 'Pas encore lu.';
+  renderBought();
   $('mkList').replaceChildren(...(mk.listings.length ? mk.listings.sort((a, b) => a.price - b.price).map(l => el('tr', {}, cardTd(l.card), el('td', {textContent: l.card.licence || ''}),
-    el('td', {textContent: l.price.toLocaleString('fr-FR')}), el('td', {textContent: l.seller || ''}),
+    el('td', {textContent: coins(l.price)}), el('td', {textContent: l.seller || ''}),
     el('td', {textContent: l.planned ? `achat vers ${new Date(l.planned).toLocaleTimeString('fr-FR', {timeStyle: 'short'})}` : ''}))) : [el('tr', {}, el('td', {colSpan: 5, className: 'xnote', textContent: 'Aucune annonce.'}))]));
-  $('mkBought').replaceChildren(...(mk.bought.length ? mk.bought.map(b => el('tr', {}, el('td', {textContent: time(b.at)}), cardTd(b.card), el('td', {textContent: b.price.toLocaleString('fr-FR')})))
-    : [el('tr', {}, el('td', {colSpan: 3, className: 'xnote', textContent: 'Rien acheté pour l\'instant.'}))]));
   $('mkRoutines').replaceChildren(...(mk.routines.length ? mk.routines.map(r => el('li', {className: r.on && r.left > 0 ? '' : 'off'},
-    el('b', {textContent: mkTarget(r)}),
-    el('span', {textContent: `≤ ${r.max.toLocaleString('fr-FR')} pièces · encore ${r.left}`}),
+    el('b', {textContent: whereText(r.where)}),
+    el('span', {textContent: `encore ${r.left}`}),
     el('small', {textContent: r.delays.map(d => `${d.min}–${d.max} min : ${d.pct} %`).join(' · ')}),
     el('div', {className: 'acts'},
       el('label', {className: 'xsafe'}, el('input', {type: 'checkbox', checked: r.on, onchange: e => saveRoutines(mk.routines.map(x => x.id === r.id ? {...x, on: e.target.checked} : x))}), 'Active'),
       el('button', {type: 'button', className: 'ghost', textContent: 'Modifier', onclick: () => editRoutine(r)}),
       el('button', {type: 'button', className: 'ghost', textContent: 'Supprimer', onclick: () => confirm('Supprimer cette routine ?') && saveRoutines(mk.routines.filter(x => x.id !== r.id))}))))
     : [el('li', {className: 'xnote', textContent: 'Aucune routine.'})]));
+  renderAuctions();
 }
-function mkOptions() {
-  const lic = $('mkKind').value === 'licence';
-  $('mkValueBox').firstChild.textContent = lic ? 'Licence' : 'Carte';
-  $('mkValueBox').hidden = $('mkKind').value === 'rarity';
-  $('mkRarityBox').hidden = !$('mkValueBox').hidden;
-  $('mkValue').required = !$('mkValueBox').hidden;
-  const values = lic ? [...new Set(mk.cards.map(c => c[2]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')) : mk.cards.map(mkCardLabel);
-  $('mkOptions').replaceChildren(...values.map(v => el('option', {value: v})));
+// ---- Enchères : plafond enregistré côté serveur, l'offre part quelques secondes avant la fin ----
+const SNIPE_STATUS = {won: 'Gagnée', lost: 'Perdue', over: 'Plafond dépassé', error: 'Erreur'};
+async function saveSnipe(id, max) {
+  try { await post('api/snipes', {id, max}); }
+  catch (e) { alert(e.message); }
+  loadMarket();
 }
+function renderAuctions() {
+  const left = t => { const ms = Date.parse(t) - Date.now(); return ms <= 0 ? 'terminée' : ms < MIN ? Math.ceil(ms / 1000) + ' s' : ago(ms); };
+  const snipeOf = new Map(mk.snipes.map(s => [s.id, s]));
+  $('snList').replaceChildren(...(mk.snipes.length ? mk.snipes.map(s => el('tr', {}, cardTd(s.card), el('td', {textContent: coins(s.max)}),
+    el('td', {textContent: coins(s.current)}), el('td', {textContent: s.status === 'wait' ? left(s.ends_at) : time(Date.parse(s.ends_at))}),
+    el('td', {textContent: s.status === 'wait' ? (s.leading ? `Tu mènes${s.bid ? ' à ' + coins(s.bid) : ''}` : 'En attente de la fin') : SNIPE_STATUS[s.status] + (s.status === 'won' ? ` à ${coins(s.bid)}` : '')}),
+    el('td', {}, el('button', {type: 'button', className: 'ghost', textContent: s.status === 'wait' ? 'Annuler' : 'Effacer', onclick: () => saveSnipe(s.id, null)}))))
+    : [el('tr', {}, el('td', {colSpan: 6, className: 'xnote', textContent: 'Aucune. Choisis une enchère ci-dessous et mets ton plafond.'}))]));
+  if ($('aucList').contains(document.activeElement)) return; // ne pas effacer un plafond en cours de saisie
+  const q = $('aucSearch').value.trim().toLowerCase();
+  const list = mk.auctions.filter(a => `${a.card.name} ${a.card.licence}`.toLowerCase().includes(q)).sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at));
+  $('aucInfo').textContent = `${plural(mk.auctions.length, 'enchère')} en cours${mk.at ? ' · relu à ' + time(mk.at) : ''}`;
+  $('aucList').replaceChildren(...(list.length ? list.map(a => {
+    const s = snipeOf.get(a.id), on = s && s.status === 'wait';
+    const input = el('input', {type: 'number', min: a.need, value: on ? s.max : '', placeholder: String(a.need)});
+    input.setAttribute('aria-label', `Plafond pour ${a.card.name}`);
+    const go = () => { const v = Math.floor(+input.value); if (v) saveSnipe(a.id, v); };
+    input.onkeydown = e => { if (e.key === 'Enter') go(); };
+    return el('tr', {}, cardTd(a.card), el('td', {textContent: a.card.licence || ''}),
+      el('td', {textContent: a.bid == null ? `départ ${coins(a.price)}` : `${coins(a.bid)} (${plural(a.bids, 'offre')})${a.leading ? ' · tu mènes' : ''}`}),
+      el('td', {textContent: coins(a.need)}), el('td', {textContent: left(a.ends_at)}), el('td', {textContent: a.seller || ''}),
+      el('td', {}, el('span', {className: 'acts', style: 'margin:0'}, input, el('button', {type: 'button', className: 'ghost', textContent: on ? 'Modifier' : 'Programmer', onclick: go}),
+        ...(on ? [el('button', {type: 'button', className: 'ghost', textContent: '✕', title: 'Annuler', onclick: () => saveSnipe(a.id, null)})] : []))));
+  }) : [el('tr', {}, el('td', {colSpan: 7, className: 'xnote', textContent: 'Aucune enchère en cours.'}))]));
+}
+$('aucSearch').oninput = () => mk && renderAuctions();
+$('mkBoughtShow').onchange = () => mk && renderBought();
 async function loadMarket() {
-  try { mk = await getJson('api/market'); renderMarket(); if (!$('mkOptions').children.length) mkOptions(); }
-  catch (e) { $('mkInfo').textContent = e.message; }
+  try {
+    mk = await getJson('api/market');
+    if (!$('mkCardOpts').children.length) {
+      $('mkCardOpts').replaceChildren(...mk.cards.map(c => el('option', {value: mkCardLabel(c)})));
+      $('mkLicOpts').replaceChildren(...[...new Set(mk.cards.map(c => c[2]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')).map(v => el('option', {value: v})));
+      if (!$('mkWhere').children.length) $('mkWhere').append(groupEl());
+    }
+    renderMarket();
+  } catch (e) { $('mkInfo').textContent = $('aucInfo').textContent = e.message; }
 }
 async function saveRoutines(routines) {
   $('mkErr').hidden = true;
@@ -1507,19 +1633,15 @@ async function saveRoutines(routines) {
   catch (e) { $('mkErr').textContent = e.message; $('mkErr').hidden = false; return false; }
   finally { await loadMarket(); refresh().catch(() => {}); }
 }
-$('mkRarity').append(...RARITIES.map((r, i) => el('option', {value: i, textContent: r})));
 $('mkDelays').append(delayRow({min: 1, max: 5, pct: 40}), delayRow({min: 5, max: 10, pct: 60}));
 mkPct();
 $('mkAddDelay').onclick = () => { $('mkDelays').append(delayRow()); mkPct(); };
-$('mkKind').onchange = () => { $('mkValue').value = ''; mkOptions(); };
+$('mkAddGroup').onclick = () => mk && $('mkWhere').append(groupEl());
 $('mkForm').onsubmit = async e => {
   e.preventDefault();
-  const kind = $('mkKind').value, v = $('mkValue').value.trim();
-  let value = kind === 'rarity' ? $('mkRarity').value : v;
-  if (kind === 'card') value = (mk.cards.find(c => mkCardLabel(c) === v) || mk.cards.find(c => c[1] === v) || [])[0];
-  if (kind === 'licence' && !mk.cards.some(c => c[2] === v)) value = null;
-  if (!value) { $('mkErr').textContent = kind === 'card' ? 'Choisis une carte dans la liste.' : 'Licence inconnue.'; $('mkErr').hidden = false; return; }
-  const r = {kind, value, on: true, max: Math.floor(+$('mkMax').value), left: Math.floor(+$('mkLeft').value), delays: mkDelays()};
+  let where;
+  try { where = readWhere(); } catch (err) { $('mkErr').textContent = err.message; $('mkErr').hidden = false; return; }
+  const r = {where, on: true, left: Math.floor(+$('mkLeft').value), delays: mkDelays()};
   const ok = await saveRoutines(mkEdit ? mk.routines.map(x => x.id === mkEdit ? {...x, ...r, on: x.on} : x) : [...mk.routines, r]);
   if (ok) editRoutine(null);
 };
@@ -1530,12 +1652,8 @@ function editRoutine(r) {
   $('mkFormTitle').textContent = r ? 'Modifier la routine' : 'Nouvelle routine';
   $('mkSubmit').textContent = r ? 'Enregistrer' : 'Ajouter la routine';
   $('mkCancel').hidden = !r;
-  $('mkKind').value = r ? r.kind : 'card';
-  mkOptions();
-  const card = r && r.kind === 'card' && mk.cards.find(c => c[0] === r.value);
-  $('mkValue').value = !r || r.kind === 'rarity' ? '' : card ? mkCardLabel(card) : r.value;
-  if (r && r.kind === 'rarity') $('mkRarity').value = r.value;
-  $('mkMax').value = r ? r.max : '';
+  $('mkErr').hidden = true;
+  $('mkWhere').replaceChildren(...(r ? r.where.map(groupEl) : [groupEl()]));
   $('mkLeft').value = r ? r.left || 1 : 1;
   $('mkDelays').replaceChildren(...(r ? r.delays : [{min: 1, max: 5, pct: 40}, {min: 5, max: 10, pct: 60}]).map(delayRow));
   mkPct();
@@ -1552,9 +1670,12 @@ $('mkQuietForm').onsubmit = e => e.preventDefault();
 setInterval(() => { if (!$('viewMarket').hidden) loadMarket(); }, 30000);
 
 function showView() {
-  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
   for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats']) $(id).hidden = id !== view;
-  if (view === 'viewMarket') loadMarket();
+  if (view === 'viewMarket') { mkNewSince ??= mkSeenAt; loadMarket(); } else mkNewSince = null; // nouveaux achats surlignés pendant la visite
+  paintMkBadge();
+  $('subMkFixed').hidden = location.hash === '#marche-encheres';
+  $('subMkAuctions').hidden = location.hash !== '#marche-encheres';
   $('subStatsPlayers').hidden = location.hash !== '#stats';
   $('subStatsLicences').hidden = location.hash !== '#stats-licences';
   if (location.hash === '#stats') loadStats();
