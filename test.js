@@ -600,6 +600,13 @@ const start = async () => {
   m = await (await api('/api/market')).json();
   assert.strictEqual(m.routines[0].id, id, 'même routine après modification');
   assert.strictEqual(game.bought.length, 2, 'prix max abaissé : plus de correspondance');
+  // « Que je n'ai pas » : ac0 est dans ma collection, bc1 non.
+  assert.strictEqual((await post('/api/routines', { routines: [{ ...routine, where: [[{ f: 'owned', op: '=', v: 2 }, { f: 'price', op: '<=', v: 9 }]] }] })).status, 400, 'valeur inconnue refusée');
+  game.listings = [{ id: 10, card: 'ac0', kind: 'fixe', price: 5, mine: false, status: 'active' }, { id: 11, card: 'bc1', kind: 'fixe', price: 6, mine: false, status: 'active' }];
+  await post('/api/routines', { routines: [{ ...routine, left: 5, delays: [{ min: 0, max: 0, pct: 1 }], where: [[{ f: 'owned', op: '=', v: 0 }, { f: 'price', op: '<=', v: 9 }]] }] });
+  await until(async () => game.bought.length === 3, 'achat de la carte qui me manque');
+  await sleep(300);
+  assert.deepStrictEqual(game.bought.slice(2), [11], 'seulement la carte que je n\'ai pas');
   await post('/api/routines', { routines: [] });
 
   // Enchères : offre au minimum du site (+5 %, au moins +1) juste avant la fin, relance si dépassé, jamais au-dessus du plafond.
