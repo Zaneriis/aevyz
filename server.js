@@ -962,6 +962,13 @@ const server = http.createServer(async (req, res) => {
       if (!user) return send(400, { error: 'Joueur invalide' });
       return send(200, await manualTrade(user));
     }
+    // Filtres « Que X a / n'a pas » de l'échange manuel : la collection d'un autre joueur, relue au plus toutes les 6 h comme les pastilles.
+    if (req.method === 'GET' && url.pathname === '/api/trades/owner') {
+      const user = url.searchParams.get('user');
+      if (!user) return send(400, { error: 'Joueur invalide' });
+      const { theirs } = await theirsOf(user, BADGE_CACHE_MS);
+      return send(200, theirs?.private ? { private: true, name: theirs.username } : { private: false, name: theirs?.username, cards: Object.keys(theirs?.cards || {}).filter(id => theirs.cards[id] > 0) });
+    }
     if (req.method === 'GET' && url.pathname === '/api/trades/counts') {
       const user = url.searchParams.get('user');
       if (!user) return send(400, { error: 'Joueur invalide' });

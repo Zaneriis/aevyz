@@ -1138,9 +1138,35 @@ function manFilters() {
   return d.private ? [['need', 'Qui me manquent', c => !c.mine], ['wish', 'Mes envies', c => c.myWish], ['all', 'Tout le catalogue', () => true]]
     : [['wish', 'Mes envies', c => c.myWish], ['need', 'Qui me manquent', c => !c.mine], ['dup', 'Ses doublons', c => c.theirs > 1], ['all', 'Toutes', () => true]];
 }
+// Filtre « Que X n'a pas » (ses cartes) / « Que X a » (mes cartes) : la collection d'un autre joueur, lue une fois par joueur.
+const owners = new Map();
+const whoOk = c => { const o = man.who && owners.get(man.who)?.cards; return !o || (man.tab === 'mine' ? o.has(c.id) : !o.has(c.id)); };
+async function pickWho(id) {
+  man.who = id;
+  man.lim = 60;
+  if (id && !owners.get(id)?.cards) {
+    owners.set(id, {state: 'Chargement de sa collection…'});
+    paintWho();
+    try {
+      const o = await getJson(`api/trades/owner?user=${encodeURIComponent(id)}`);
+      owners.set(id, o.private ? {state: 'Ce joueur garde sa collection privée : filtre sans effet.'} : {cards: new Set(o.cards)});
+    } catch (e) { owners.set(id, {state: `Collection illisible : ${e.message}`}); } // sans cartes : relue au prochain choix
+    if (man?.who !== id) return;
+  }
+  if (!$('manGrid')) return;
+  paintWho();
+  paintManChips();
+  paintManGrid();
+}
+function paintWho() {
+  const s = man.who && owners.get(man.who)?.state;
+  if (!$('manWho')) return;
+  $('manWho').textContent = s || '';
+  $('manWho').hidden = !s;
+}
 // En plus du site : « Sans les cartes déjà en attente » écarte celles que je donnerais ou recevrais déjà dans un échange en attente.
 const manPool = () => man.d.cards.filter(c => (man.tab === 'mine' ? c.mine > 0 : c.theirs !== 0)
-  && !($('tradePending').checked && (man.tab === 'mine' ? c.pendingOut : c.pendingIn)));
+  && !($('tradePending').checked && (man.tab === 'mine' ? c.pendingOut : c.pendingIn)) && whoOk(c));
 const manOn = fl => { const s = fl.filter(x => man.f.includes(x[0]) && x[0] !== 'all'); return s.length ? s : [fl[fl.length - 1]]; };
 function manList() {
   const on = manOn(manFilters()), t = norm(man.q.trim());
@@ -1218,7 +1244,7 @@ function renderManual() {
   const tab = (key, label, n) => {
     const b = el('button', {type: 'button', role: 'tab', className: 'mtab', textContent: label + ' ', onclick: () => {
       if (man.tab === key) return;
-      Object.assign(man, {tab: key, f: null, q: '', rar: '', lic: '', lim: 60});
+      Object.assign(man, {tab: key, f: null, q: '', rar: '', lic: '', who: '', lim: 60});
       renderManual();
     }}, el('small', {textContent: n}));
     b.setAttribute('aria-selected', man.tab === key);
@@ -1235,16 +1261,25 @@ function renderManual() {
   const tabs = el('div', {className: 'mtabs'}, tab('theirs', d.private ? 'Cartes à demander' : 'Ses cartes', d.private ? '' : d.cards.filter(c => c.theirs > 0).length),
     tab('mine', 'Mes cartes', d.cards.filter(c => c.mine > 0).length));
   tabs.setAttribute('role', 'tablist');
+  const whoLabel = n => man.tab === 'mine' ? `Que ${n} a` : `Que ${n} n'a pas`;
+  const who = el('select', {className: 'mksel', onchange: () => pickWho(who.value)},
+    el('option', {value: '', textContent: whoLabel('…') + ' : personne'}),
+    ...(playerRows || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr'))
+      .map(p => el('option', {value: p.id, textContent: whoLabel(p.name || 'Joueur'), selected: p.id === man.who})));
+  who.setAttribute('aria-label', man.tab === 'mine' ? 'Mes cartes qu\'un joueur a' : 'Ses cartes qu\'un joueur n\'a pas');
+  who.title = man.tab === 'mine' ? 'N\'affiche que tes cartes que ce joueur possède déjà.' : 'N\'affiche que les cartes de ce joueur que le joueur choisi ne possède pas.';
   $('tradeBody').replaceChildren(
     el('article', {className: 'glass xblock compose', id: 'manTop'}),
     tabs,
     ...(d.private && man.tab === 'theirs' ? [el('p', {className: 'xnote', textContent: 'Sa collection est privée : tu peux quand même demander n\'importe quelle carte du catalogue.'})] : []),
     el('div', {className: 'mfilters'}, el('div', {className: 'mchips', id: 'manChips'}), search,
       select('Rareté', man.rar, [['', 'Rareté : toutes'], ...RARITIES.map((r, i) => [String(i), r]).reverse()], v => { man.rar = v; }),
-      select('Licence', man.lic, [['', 'Licence : toutes'], ...lics.map(l => [l, l])], v => { man.lic = v; })),
+      select('Licence', man.lic, [['', 'Licence : toutes'], ...lics.map(l => [l, l])], v => { man.lic = v; }), who),
+    el('p', {className: 'xnote', id: 'manWho', role: 'status', hidden: true}),
     el('div', {id: 'manGrid'}),
     el('p', {className: 'xnote', textContent: 'Les cotes du marché servent d\'estimation (prix moyen de la rareté sans cote). La surcouche n\'ajoute jamais de pièces à un échange.'}));
   paintManTop();
+  paintWho();
   paintManChips();
   paintManGrid();
 }

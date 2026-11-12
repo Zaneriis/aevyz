@@ -392,6 +392,10 @@ const start = async () => {
   const manPriv = await (await api('/api/trades/manual?user=prive')).json();
   assert.deepStrictEqual([manPriv.private, manPriv.cards.length, manPriv.cards.every(c => c.theirs === null)], [true, 16, true], 'collection privée : tout le catalogue');
   assert.strictEqual((await api('/api/trades/manual')).status, 400);
+  const own = await (await api('/api/trades/owner?user=lui')).json();
+  assert.deepStrictEqual([own.private, own.name, own.cards.sort()], [false, 'Lui', ['bc0', 'bc1', 'be3', 'br0', 'br1', 'zzz']], 'collection d\'un tiers pour les filtres');
+  assert.deepStrictEqual(await (await api('/api/trades/owner?user=prive')).json(), { private: true, name: 'Privé' });
+  assert.strictEqual((await api('/api/trades/owner')).status, 400);
 
   // Échanges en attente : vus de mon côté, avec mes exemplaires.
   const pend = await (await api('/api/pending')).json();
