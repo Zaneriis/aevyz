@@ -478,6 +478,8 @@ const start = async () => {
   assert.deepStrictEqual(await missing(ME), [200, { [ME]: [0, 0, 0, 0, 0, 0, 0], lui: [2, 0, 2, 1, 0, 0, 0], prive: null }], 'ce que les autres ont et pas moi');
   assert.deepStrictEqual((await missing('lui'))[1][ME], [2, 0, 2, 0, 0, 1, 0], 'ce que j\'ai et pas lui');
   assert.deepStrictEqual((await missing(ME, '&dupes=1'))[1].lui, [1, 0, 1, 0, 0, 0, 0], 'seulement ses doublons');
+  assert.deepStrictEqual((await missing(ME, '&pending=1'))[1].lui, [1, 0, 2, 1, 0, 0, 0], 'bc0, demandée dans mon échange envoyé, compte comme à moi');
+  assert.deepStrictEqual((await missing('lui', '&pending=1'))[1][ME], [2, 0, 2, 0, 0, 1, 0], 'sans effet pour un autre joueur');
   assert.strictEqual((await missing('prive'))[0], 400, 'référence privée');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
   assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes du catalogue par rareté, alternatives comprises');

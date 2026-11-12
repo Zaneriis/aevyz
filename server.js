@@ -512,10 +512,12 @@ function statsPlayer(id) {
   };
 }
 // Pour chaque joueur : nombre de cartes par rareté qu'il possède et que le joueur de référence n'a pas (dernières lectures).
-function missingFor(ref, onlyDupes) {
+// asked : cartes que je demande dans mes échanges envoyés en attente, comptées comme déjà à moi.
+function missingFor(ref, onlyDupes, asked = []) {
   const own = db.prepare('SELECT cards FROM players WHERE id = ?').get(ref)?.cards;
   if (!own) return [400, { error: 'Collection de ce joueur pas encore lue, ou privée.' }];
   const have = JSON.parse(own), catalog = catalogMap(), out = {};
+  for (const id of asked) have[id] ||= 1;
   for (const p of db.prepare('SELECT id, cards FROM players').all()) {
     if (!p.cards) { out[p.id] = null; continue; }
     const counts = out[p.id] = [0, 0, 0, 0, 0, 0, 0];
@@ -949,7 +951,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/stats/players') return send(200, statsPlayers());
     if (req.method === 'GET' && url.pathname === '/api/stats/player') return send(200, statsPlayer(url.searchParams.get('id') || ''));
     if (req.method === 'GET' && url.pathname === '/api/stats/licences') return send(200, licenceEnvy());
-    if (req.method === 'GET' && url.pathname === '/api/stats/missing') return send(...missingFor(url.searchParams.get('id') || '', url.searchParams.get('dupes') === '1'));
+    if (req.method === 'GET' && url.pathname === '/api/stats/missing') {
+      const ref = url.searchParams.get('id') || '';
+      // Seulement pour ma collection : les cartes demandées dans mes échanges envoyés en attente.
+      const asked = url.searchParams.get('pending') === '1' && ref === kvGet('session')?.user_id
+        ? (await pendingTrades()).filter(t => t.mine).flatMap(t => t.get.map(c => c.id)) : [];
+      return send(...missingFor(ref, url.searchParams.get('dupes') === '1', asked));
+    }
     if (req.method === 'GET' && url.pathname === '/api/notifications')
       return send(200, await sb('/rest/v1/notifications?select=id,kind,title,body,link,read_at,created_at&order=created_at.desc&limit=40'));
     if (req.method === 'GET' && url.pathname === '/api/trades') {
