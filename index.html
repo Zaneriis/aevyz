@@ -1823,11 +1823,11 @@ $('lvSort').onchange = renderEnvy;
 
 // ---- Marché : routines d'achat, enregistrées côté serveur ----
 let mk = null;
-const FIELDS = {licence: 'Licence', rarity: 'Rareté', card: 'Carte', price: 'Prix', owned: 'Je l\'ai'};
-const OPS = {licence: ['=', '!='], rarity: ['=', '!=', '>=', '<='], card: ['=', '!='], price: ['<='], owned: ['=']};
+const FIELDS = {licence: 'Licence', rarity: 'Rareté', card: 'Carte', price: 'Prix', owned: 'Je l\'ai', lacks: 'Absente chez'};
+const OPS = {licence: ['=', '!='], rarity: ['=', '!=', '>=', '<='], card: ['=', '!='], price: ['<='], owned: ['='], lacks: ['=']};
 const OP_TXT = {'=': '=', '!=': '≠', '>=': '≥', '<=': '≤'};
 const mkCardLabel = c => `${c[1]} · ${c[2] || '?'} · ${RARITIES[c[3]] ?? ''}`;
-const condVal = k => k.f === 'owned' ? (k.v ? 'Oui' : 'Non') : k.f === 'rarity' ? RARITIES[k.v] : k.f === 'card' ? (mk.cards.find(c => c[0] === k.v) || [, k.v])[1] : k.f === 'price' ? k.v.toLocaleString('fr-FR') : k.v;
+const condVal = k => k.f === 'lacks' ? (mk.players.find(p => p[0] === k.v) || [, 'joueur inconnu'])[1] || 'Joueur' : k.f === 'owned' ? (k.v ? 'Oui' : 'Non') : k.f === 'rarity' ? RARITIES[k.v] : k.f === 'card' ? (mk.cards.find(c => c[0] === k.v) || [, k.v])[1] : k.f === 'price' ? k.v.toLocaleString('fr-FR') : k.v;
 const whereText = w => w.map(g => (w.length > 1 ? '(' : '') + g.map(k => `${FIELDS[k.f]} ${OP_TXT[k.op]} ${condVal(k)}`).join(' ET ') + (w.length > 1 ? ')' : '')).join(' OU ');
 const sel = (opts, value, label) => { const s = el('select', {}, ...opts.map(([v, t]) => el('option', {value: v, textContent: t}))); s.value = value; s.setAttribute('aria-label', label); return s; };
 function condRow(k = {f: 'licence', op: '=', v: ''}) {
@@ -1835,7 +1835,8 @@ function condRow(k = {f: 'licence', op: '=', v: ''}) {
   const build = v => {
     const f = field.value, op = sel(OPS[f].map(o => [o, OP_TXT[o]]), OPS[f].includes(k.op) ? k.op : OPS[f][0], 'Opérateur');
     const card = f === 'card' && mk.cards.find(c => c[0] === v);
-    const val = f === 'owned' ? sel([[0, 'Non (cartes qui me manquent)'], [1, 'Oui']], v ?? 0, 'Je l\'ai')
+    const val = f === 'lacks' ? sel(mk.players.map(([id, name]) => [id, name || 'Joueur']), v ?? mk.players[0]?.[0] ?? '', 'Joueur')
+      : f === 'owned' ? sel([[0, 'Non (cartes qui me manquent)'], [1, 'Oui']], v ?? 0, 'Je l\'ai')
       : f === 'rarity' ? sel(RARITIES.map((r, i) => [i, r]), v ?? 4, 'Rareté')
       : el('input', f === 'price' ? {type: 'number', min: 1, value: v ?? '', placeholder: 'pièces'} : {type: 'search', autocomplete: 'off', value: card ? mkCardLabel(card) : v ?? '', placeholder: FIELDS[f]});
     if (f === 'card' || f === 'licence') val.setAttribute('list', f === 'card' ? 'mkCardOpts' : 'mkLicOpts');
@@ -1858,6 +1859,7 @@ function readWhere() {
     const [f, op, val] = r.querySelectorAll('select, input'), v = val.value.trim();
     if (f.value === 'rarity') return {f: 'rarity', op: op.value, v: +v};
     if (f.value === 'owned') return {f: 'owned', op: op.value, v: +v};
+    if (f.value === 'lacks') { if (!v) throw new Error('Choisis un joueur.'); return {f: 'lacks', op: op.value, v}; }
     if (f.value === 'price') { const n = Math.floor(+v); if (!(n >= 1)) throw new Error('Prix : un nombre de pièces est attendu.'); return {f: 'price', op: op.value, v: n}; }
     if (f.value === 'card') { const c = mk.cards.find(c => mkCardLabel(c) === v) || mk.cards.find(c => c[1] === v); if (!c) throw new Error(`Carte inconnue : « ${v} ». Choisis-la dans la liste.`); return {f: 'card', op: op.value, v: c[0]}; }
     if (!mk.cards.some(c => c[2] === v)) throw new Error(`Licence inconnue : « ${v} ».`);

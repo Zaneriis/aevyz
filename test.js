@@ -607,6 +607,13 @@ const start = async () => {
   await until(async () => game.bought.length === 3, 'achat de la carte qui me manque');
   await sleep(300);
   assert.deepStrictEqual(game.bought.slice(2), [11], 'seulement la carte que je n\'ai pas');
+  // « Que Lui n'a pas » : Lui a bc0, pas ac1 ; collection privée : rien.
+  assert.ok((await (await api('/api/market')).json()).players.some(p => p[0] === 'lui'), 'joueurs proposés');
+  game.listings = [{ id: 12, card: 'bc0', kind: 'fixe', price: 5, mine: false, status: 'active' }, { id: 13, card: 'ac1', kind: 'fixe', price: 6, mine: false, status: 'active' }];
+  await post('/api/routines', { routines: [{ ...routine, left: 5, delays: [{ min: 0, max: 0, pct: 1 }], where: [[{ f: 'lacks', op: '=', v: 'prive' }, { f: 'price', op: '<=', v: 9 }], [{ f: 'lacks', op: '=', v: 'lui' }, { f: 'price', op: '<=', v: 9 }]] }] });
+  await until(async () => game.bought.length === 4, 'achat de la carte qui manque à Lui');
+  await sleep(300);
+  assert.deepStrictEqual(game.bought.slice(3), [13], 'seulement la carte que Lui n\'a pas');
   await post('/api/routines', { routines: [] });
 
   // Enchères : offre au minimum du site (+5 %, au moins +1) juste avant la fin, relance si dépassé, jamais au-dessus du plafond.

@@ -727,8 +727,8 @@ const DELAY_UNIT_MS = +process.env.DELAY_UNIT_MS || 60000; // réduit par test.j
 let market = { at: 0, listings: [] }, spent = 0; // spent : pièces engagées au marché, pour que openAll ne crie pas à la fuite
 const planned = new Map(); // id d'annonce → { routine, card, price, at, timer }
 // Conditions d'une routine, comme un WHERE : where = [groupe OU groupe…], chaque groupe = [condition ET condition…].
-// owned : 1 si j'ai déjà la carte, 0 sinon (« que je n'ai pas » : owned = 0).
-const COND_OPS = { card: ['=', '!='], licence: ['=', '!='], rarity: ['=', '!=', '>=', '<='], price: ['<='], owned: ['='] };
+// owned : 1 si j'ai déjà la carte, 0 sinon (« que je n'ai pas » : owned = 0). lacks : id d'un joueur qui n'a pas la carte.
+const COND_OPS = { card: ['=', '!='], licence: ['=', '!='], rarity: ['=', '!=', '>=', '<='], price: ['<='], owned: ['='], lacks: ['='] };
 const CMP = { '=': (a, b) => a === b, '!=': (a, b) => a !== b, '>=': (a, b) => a >= b, '<=': (a, b) => a <= b };
 // Ancien format (une cible + un prix max) converti à la lecture.
 const upgrade = r => r.where ? r : { ...r, where: [[{ f: r.kind, op: '=', v: r.kind === 'rarity' ? +r.value : r.value }, { f: 'price', op: '<=', v: r.max }]] };
@@ -737,11 +737,20 @@ const listMarket = async () => (market = { at: Date.now(), listings: await sb('/
 // Ma collection, relue à chaque scan et juste avant chaque achat, seulement si une routine filtre dessus.
 const usesOwned = r => r.where.some(g => g.some(k => k.f === 'owned'));
 const myCards = async () => new Set((await selectAll('owned_cards', 'card_id,count', 'card_id')).filter(x => x.count > 0).map(x => x.card_id));
-function matches(r, l, c, owned) {
+// Collections des autres joueurs visés par « Que X n'a pas » : cache de 6 h, comme les pastilles ; privée ou illisible : la condition échoue.
+async function routineCtx(list) {
+  const ctx = { owned: list.some(usesOwned) ? await myCards() : null, others: new Map() };
+  for (const id of new Set(list.flatMap(r => r.where.flat().filter(k => k.f === 'lacks').map(k => k.v)))) {
+    try { const { theirs } = await theirsOf(id, BADGE_CACHE_MS); ctx.others.set(id, theirs?.private ? null : new Set(Object.keys(theirs?.cards || {}).filter(c => theirs.cards[c] > 0))); }
+    catch (e) { ctx.others.set(id, null); log(`Marché : collection d'un joueur illisible (${e.message})`); }
+  }
+  return ctx;
+}
+function matches(r, l, c, { owned = null, others = new Map() } = {}) {
   if (!r.on || l.kind !== 'fixe' || l.mine || (l.status ?? 'active') !== 'active') return false;
   if (usesOwned(r) && !owned) return false;
   const val = { card: l.card, licence: c?.licence, rarity: c?.rarity, price: l.price, owned: owned ? +owned.has(l.card) : null };
-  return r.where.some(g => g.every(k => CMP[k.op](val[k.f], k.v)));
+  return r.where.some(g => g.every(k => k.f === 'lacks' ? others.get(k.v)?.has(l.card) === false : CMP[k.op](val[k.f], k.v)));
 }
 // Tranches [min, max] en minutes, chacune avec son poids : on tire une tranche selon les poids, puis une durée uniforme dedans.
 function pickDelay(delays) {
@@ -753,12 +762,12 @@ const busy = id => [...planned.values()].filter(p => p.routine === id).length;
 async function scanMarket() {
   const active = routines().filter(r => r.on && r.left > 0);
   if (!kvGet('session') || !active.length || quietNow(kvGet('market_quiet'))) return;
-  let owned = null;
-  try { await listMarket(); if (active.some(usesOwned)) owned = await myCards(); } catch (e) { return log('Marché : ' + e.message); }
+  let ctx;
+  try { await listMarket(); ctx = await routineCtx(active); } catch (e) { return log('Marché : ' + e.message); }
   const catalog = catalogMap();
   for (const l of [...market.listings].sort((a, b) => a.price - b.price)) {
     if (planned.has(l.id)) continue;
-    const r = active.find(r => r.left - busy(r.id) > 0 && matches(r, l, catalog.get(l.card), owned));
+    const r = active.find(r => r.left - busy(r.id) > 0 && matches(r, l, catalog.get(l.card), ctx));
     if (!r) continue;
     const ms = pickDelay(r.delays), name = catalog.get(l.card)?.name || l.card;
     planned.set(l.id, { routine: r.id, card: l.card, price: l.price, at: Date.now() + ms, timer: setTimeout(() => buy(l.id), ms) });
@@ -773,8 +782,8 @@ async function buy(id) {
   if (quietNow(kvGet('market_quiet'))) return log(`Marché : pause, achat de ${name} reporté`);
   try {
     // Relu juste avant : l'annonce a pu partir, changer de prix, ou la routine être modifiée entre-temps.
-    const l = (await listMarket()).find(x => x.id === id), owned = r && usesOwned(r) ? await myCards() : null;
-    if (!r || r.left <= 0 || !l || !matches(r, l, catalogMap().get(l.card), owned)) return log(`Marché : ${name} n'est plus à prendre, achat annulé`);
+    const l = (await listMarket()).find(x => x.id === id), ctx = r ? await routineCtx([r]) : null;
+    if (!r || r.left <= 0 || !l || !matches(r, l, catalogMap().get(l.card), ctx)) return log(`Marché : ${name} n'est plus à prendre, achat annulé`);
     spent += l.price;
     try { await sb('/rest/v1/rpc/market_buy', { method: 'POST', body: { p_id: id } }); } catch (e) { spent -= l.price; throw e; }
     kvSet('routines', routines().map(x => x.id === r.id ? { ...x, left: x.left - 1 } : x));
@@ -891,6 +900,7 @@ async function marketState() {
     snipes: snipes().map(s => ({ ...s, card: card(s.card) })),
     bought: (kvGet('market_bought') || []).map(b => ({ ...b, card: card(b.card) })),
     cards: [...catalog.values()].map(c => [c.id, c.name, c.licence, c.rarity]),
+    players: db.prepare('SELECT id, name FROM players WHERE id != ? ORDER BY name').all(kvGet('session')?.user_id || '').map(p => [p.id, p.name]),
   };
 }
 
