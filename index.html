@@ -303,6 +303,11 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .chart .line{fill:none;stroke-width:2;stroke-linejoin:round}
 .chart .cross{stroke:#ffffff55;stroke-width:1}
 .chart .tip{position:absolute;pointer-events:none;transform:translate(-50%,-110%);background:#15172a;border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:.8rem;white-space:nowrap}
+.sell{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;align-items:start}
+.sellbox{position:sticky;top:10px;display:grid;gap:8px}
+.sellbox h3{margin:0}
+.sellbox td input[type=number]{width:6.5em}
+@media (max-width:900px){.sell{grid-template-columns:1fr}.sellbox{position:static}}
 .dle{display:grid;gap:6px}
 .dle details{padding:0}
 .dle summary{cursor:pointer;padding:9px 14px;font-weight:700;display:flex;justify-content:space-between;gap:10px}
@@ -550,6 +555,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
     <nav class="tabs subtabs" aria-label="Marché">
       <a href="#marche">Prix fixe</a>
       <a href="#marche-encheres">Enchères</a>
+      <a href="#marche-vente">Vendre</a>
     </nav>
     <section id="subMkAuctions">
       <h2>Enchères programmées</h2>
@@ -559,6 +565,42 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
         <input type="search" id="aucSearch" placeholder="Carte ou licence" aria-label="Chercher une enchère" style="width:auto"></div>
       <p class="xnote" id="aucInfo"></p>
       <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Carte</th><th>Licence</th><th>Offre actuelle</th><th>Minimum</th><th>Fin dans</th><th>Vendeur</th><th>Mon plafond</th></tr></thead><tbody id="aucList"></tbody></table></div>
+    </section>
+    <section class="sell" id="subMkSell">
+      <div>
+        <div class="xhead"><h2>Mes cartes <span id="slCount" class="xnote"></span></h2>
+          <button class="ghost" type="button" id="slAddAll">Tout ajouter</button></div>
+        <div class="xfilters" id="slFilters" style="margin-bottom:10px">
+          <input type="search" id="slQ" placeholder="Rechercher une carte, une licence…" aria-label="Rechercher une carte" class="mksel">
+          <select id="slRar" aria-label="Rareté" class="mksel"></select>
+          <select id="slLic" aria-label="Licence" class="mksel"></select>
+          <select id="slHas" aria-label="Cartes qu'un joueur a" class="mksel" title="N'affiche que tes cartes que ce joueur possède déjà."></select>
+          <select id="slHasNot" aria-label="Cartes qu'un joueur n'a pas" class="mksel" title="N'affiche que tes cartes que ce joueur ne possède pas."></select>
+          <label class="xsafe"><input type="checkbox" id="slDup">Seulement mes doublons</label>
+          <label class="xsafe" title="Ne propose jamais ton dernier exemplaire."><input type="checkbox" id="slKeep" checked>Garder un exemplaire</label>
+          <label class="xsafe" title="Écarte les cartes que tu donnes dans un échange en attente."><input type="checkbox" id="slPend" checked>Sans les cartes en attente d'échange</label>
+        </div>
+        <p class="xnote" id="slWho" role="status" hidden></p>
+        <div id="slGrid"><p class="xnote">Chargement…</p></div>
+      </div>
+      <aside class="glass panel sellbox">
+        <h3>À vendre <span id="slBasketN" class="xnote"></span></h3>
+        <div class="xfilters" id="slBulk">
+          <label class="xsafe"><input type="checkbox" id="slAll">Tout cocher</label>
+          <span>Prix <input type="number" id="slPx" min="1" max="10000000" class="mksel" style="width:7em" aria-label="Prix pour les cartes cochées"> <button class="ghost" type="button" id="slPxGo">Appliquer</button></span>
+          <span><input type="number" id="slPct" min="1" value="100" class="mksel" style="width:5em" aria-label="Pourcentage de la cote"> % de la cote <button class="ghost" type="button" id="slPctGo">Appliquer</button></span>
+        </div>
+        <p class="xnote">Coche des cartes, puis applique un prix ou un % de la cote. Une carte ajoutée démarre à sa cote.</p>
+        <div style="overflow-x:auto"><table class="envy"><thead><tr><th></th><th>Carte</th><th>Qté</th><th class="num">Cote</th><th>Prix</th><th></th></tr></thead><tbody id="slBody"></tbody></table></div>
+        <div class="xfilters" style="margin-top:10px">
+          <select id="slHours" aria-label="Durée" class="mksel"><option value="24">1 jour</option><option value="72" selected>3 jours</option><option value="168">7 jours</option></select>
+          <label class="xsafe"><input type="checkbox" id="slTrade">J'accepte aussi les propositions d'échange</label>
+        </div>
+        <p id="slSum"></p>
+        <button type="button" id="slGo">Mettre en vente</button>
+        <p class="xnote" id="slMsg" role="status"></p>
+        <p class="xnote">Taxe du marché selon le prix : aucune sous 50 pièces, puis 5 % jusqu'à 200, 8 % jusqu'à 1 000 et 12 % au-delà. 50 annonces en cours au maximum.</p>
+      </aside>
     </section>
     <section class="recy mkt" id="subMkFixed">
       <div>
@@ -2038,6 +2080,135 @@ $('mkQuietForm').onchange = async () => {
 $('mkQuietForm').onsubmit = e => e.preventDefault();
 setInterval(() => { if (!$('viewMarket').hidden) loadMarket(); }, 30000);
 
+// ---- Marché > Vendre : choisir ses cartes à gauche, fixer les prix à droite, tout mettre en vente d'un coup ----
+let sl = null, slLim = 60, slBusy = false;
+const slBasket = new Map(); // id → {qty, price, on} ; on : cochée pour les prix groupés
+const mkFee = p => p < 50 ? 0 : Math.round(p * (p <= 200 ? .05 : p <= 1000 ? .08 : .12)); // même barème que le site
+const slAvail = c => c.count - ($('slKeep').checked ? 1 : 0);
+function slList() {
+  const t = norm($('slQ').value.trim()), r = $('slRar').value, l = $('slLic').value;
+  const has = owners.get($('slHas').value)?.cards, hasNot = owners.get($('slHasNot').value)?.cards;
+  return sl.cards.filter(c => slAvail(c) > 0 && (!t || norm(`${c.name} ${c.licence}`).includes(t)) && (r === '' || c.rarity === +r) && (!l || c.licence === l)
+    && (!$('slDup').checked || c.count > 1) && !($('slPend').checked && c.pending) && (!has || has.has(c.id)) && (!hasNot || !hasNot.has(c.id)))
+    .sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr'));
+}
+function slAdd(c, d) {
+  const b = slBasket.get(c.id) || {qty: 0, price: c.value, on: false};
+  b.qty = Math.min(slAvail(c), b.qty + d);
+  if (b.qty > 0) slBasket.set(c.id, b); else slBasket.delete(c.id);
+}
+const paintSell = () => { if (sl) { paintSlGrid(); paintSlBasket(); } };
+function paintSlGrid() {
+  const list = slList();
+  $('slCount').textContent = `· ${plural(list.length, 'carte')}`;
+  $('slGrid').replaceChildren(list.length ? el('div', {className: 'tgrid'}, ...list.slice(0, slLim).map(c => {
+    const n = slBasket.get(c.id)?.qty || 0;
+    const add = el('button', {type: 'button', className: 'ghost pick', textContent: n ? '+' : 'Ajouter', disabled: n >= slAvail(c), onclick: () => { slAdd(c, 1); paintSell(); }});
+    add.setAttribute('aria-label', `Ajouter ${c.name}`);
+    const rm = el('button', {type: 'button', className: 'ghost pick', textContent: '−', onclick: () => { slAdd(c, -1); paintSell(); }});
+    rm.setAttribute('aria-label', `Retirer ${c.name}`);
+    return el('div', {className: `mcard${n ? ' on' : ''}`}, cardEl(c), el('span', {className: 'tag', textContent: `×${c.count} chez toi`}),
+      ...(c.pending ? [el('span', {className: 'tag medium', textContent: 'en attente d\'échange'})] : []),
+      el('span', {className: 'tag', textContent: `≈ ${coins(c.value)} pièces`}),
+      el('div', {className: 'mpick'}, ...(n ? [rm, el('b', {textContent: `×${n}`})] : []), add));
+  })) : el('p', {className: 'xnote', textContent: 'Aucune carte ici. Essaie un autre filtre.'}),
+  ...(list.length > slLim ? [el('button', {type: 'button', className: 'ghost more', textContent: `Voir plus · ${list.length - slLim}`, onclick: () => { slLim += 120; paintSlGrid(); }})] : []));
+}
+function paintSlBasket() {
+  for (const [id, b] of slBasket) { const m = sl.byId.has(id) ? slAvail(sl.byId.get(id)) : 0; if (m > 0) b.qty = Math.min(b.qty, m); else slBasket.delete(id); }
+  const rows = [...slBasket].map(([id, b]) => [sl.byId.get(id), b])
+    .sort(([x], [y]) => (y.rarity ?? 0) - (x.rarity ?? 0) || (x.name || '').localeCompare(y.name || '', 'fr'));
+  $('slBody').replaceChildren(...(rows.length ? rows.map(([c, b]) => {
+    const ck = el('input', {type: 'checkbox', checked: b.on, onchange: () => { b.on = ck.checked; paintSlSum(); }});
+    ck.setAttribute('aria-label', `Cocher ${c.name}`);
+    const q = el('input', {type: 'number', min: 1, max: slAvail(c), value: b.qty, className: 'mksel', style: 'width:4em',
+      onchange: () => { b.qty = Math.max(1, Math.min(slAvail(c), Math.floor(+q.value) || 1)); paintSell(); }});
+    q.setAttribute('aria-label', `Exemplaires de ${c.name}`);
+    const p = el('input', {type: 'number', min: 1, max: 1e7, value: b.price, className: 'mksel',
+      onchange: () => { b.price = Math.max(1, Math.min(1e7, Math.floor(+p.value) || 1)); p.value = b.price; paintSlSum(); }});
+    p.setAttribute('aria-label', `Prix de ${c.name}`);
+    const x = el('button', {type: 'button', className: 'ghost', textContent: '✕', onclick: () => { slBasket.delete(c.id); paintSell(); }});
+    x.setAttribute('aria-label', `Retirer ${c.name} de la vente`);
+    const name = el('td', {}, el('b', {textContent: c.name}), el('br'), el('small', {textContent: `${RARITIES[c.rarity] ?? '?'} · ${c.licence || ''}`}));
+    name.style.borderLeft = `3px solid ${RCOL[c.rarity ?? 0]}`;
+    return el('tr', {}, el('td', {}, ck), name, el('td', {}, q), el('td', {className: 'num', textContent: coins(c.value)}), el('td', {}, p), el('td', {}, x));
+  }) : [el('tr', {}, el('td', {colSpan: 6, className: 'xnote', textContent: 'Ajoute des cartes depuis la liste.'}))]));
+  paintSlSum();
+}
+function paintSlSum() {
+  let n = 0, tot = 0, fee = 0, on = 0;
+  for (const b of slBasket.values()) { n += b.qty; tot += b.qty * b.price; fee += b.qty * mkFee(b.price); if (b.on) on++; }
+  $('slAll').checked = slBasket.size > 0 && on === slBasket.size;
+  $('slBasketN').textContent = `· ${plural(n, 'annonce')}`;
+  $('slSum').textContent = n ? `${plural(n, 'annonce')} (${sl.room} possibles) · ${coins(tot)} pièces, taxe ${coins(fee)}, tu touches ${coins(tot - fee)}` : '';
+  $('slGo').disabled = !n || n > sl.room || slBusy;
+  $('slGo').textContent = n > sl.room ? `Trop d'annonces : ${sl.room} au maximum` : `Mettre en vente${n ? ` (${n})` : ''}`;
+}
+function slFill(id, opts) {
+  const s = $(id), v = s.value;
+  s.replaceChildren(...opts.map(([value, textContent]) => el('option', {value, textContent})));
+  s.value = v; if (s.value !== v) s.value = '';
+}
+async function loadSell() {
+  try {
+    const d = await getJson('api/market/sellable');
+    sl = {...d, byId: new Map(d.cards.map(c => [c.id, c]))};
+    slFill('slRar', [['', 'Rareté : toutes'], ...RARITIES.map((r, i) => [String(i), r]).reverse()]);
+    slFill('slLic', [['', 'Licence : toutes'], ...[...new Set(d.cards.map(c => c.licence).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')).map(l => [l, l])]);
+    slFill('slHas', [['', 'Que … a : personne'], ...d.players.map(([id, n]) => [id, `Que ${n || 'Joueur'} a`])]);
+    slFill('slHasNot', [['', 'Que … n\'a pas : personne'], ...d.players.map(([id, n]) => [id, `Que ${n || 'Joueur'} n'a pas`])]);
+    paintSell();
+  } catch (e) { $('slGrid').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+// « Que X a / n'a pas » : même cache des collections que l'onglet Échanges.
+function slWhoNote() {
+  const s = [$('slHas').value, $('slHasNot').value].map(id => id && owners.get(id)?.state).filter(Boolean).join(' ');
+  $('slWho').textContent = s; $('slWho').hidden = !s;
+}
+async function slWho(id) {
+  if (id && !owners.get(id)?.cards) {
+    owners.set(id, {state: 'Chargement de sa collection…'});
+    slWhoNote();
+    try {
+      const o = await getJson(`api/trades/owner?user=${encodeURIComponent(id)}`);
+      owners.set(id, o.private ? {state: 'Ce joueur garde sa collection privée : filtre sans effet.'} : {cards: new Set(o.cards)});
+    } catch (e) { owners.set(id, {state: `Collection illisible : ${e.message}`}); }
+  }
+  slWhoNote();
+  paintSell();
+}
+$('slFilters').oninput = e => { slLim = 60; if (e.target.id === 'slHas' || e.target.id === 'slHasNot') slWho(e.target.value); else paintSell(); };
+$('slAddAll').onclick = () => { if (!sl) return; for (const c of slList()) slAdd(c, slAvail(c)); paintSell(); };
+$('slAll').onchange = () => { for (const b of slBasket.values()) b.on = $('slAll').checked; paintSlBasket(); };
+const slChecked = () => { const l = [...slBasket].filter(([, b]) => b.on); $('slMsg').textContent = l.length ? '' : 'Coche d\'abord des cartes.'; return l; };
+$('slPxGo').onclick = () => {
+  const v = Math.floor(+$('slPx').value);
+  if (!(v >= 1 && v <= 1e7)) { $('slMsg').textContent = 'Prix entre 1 et 10 000 000 pièces.'; return; }
+  for (const [, b] of slChecked()) b.price = v;
+  paintSlBasket();
+};
+$('slPctGo').onclick = () => {
+  const k = +$('slPct').value / 100;
+  if (!(k > 0)) { $('slMsg').textContent = 'Pourcentage invalide.'; return; }
+  for (const [id, b] of slChecked()) b.price = Math.min(1e7, Math.max(1, Math.round(sl.byId.get(id).value * k)));
+  paintSlBasket();
+};
+$('slGo').onclick = async () => {
+  const items = [];
+  for (const [id, b] of slBasket) for (let i = 0; i < b.qty; i++) items.push({id, price: b.price});
+  if (!items.length || items.length > sl.room || !confirm(`Mettre ${plural(items.length, 'annonce')} en vente ?`)) return;
+  slBusy = true; paintSlSum();
+  $('slMsg').textContent = `Mise en vente de ${plural(items.length, 'annonce')}…`;
+  try {
+    const r = await post('api/market/sell', {items, hours: +$('slHours').value, trade: $('slTrade').checked});
+    $('slMsg').textContent = `${plural(r.ok, 'annonce')} créée${r.ok > 1 ? 's' : ''}${r.error ? ` · arrêt : ${r.error}` : '.'}`;
+    for (const it of items.slice(0, r.ok)) { const b = slBasket.get(it.id); if (b && --b.qty <= 0) slBasket.delete(it.id); } // le panier garde ce qui n'est pas parti
+  } catch (e) { $('slMsg').textContent = e.message; }
+  slBusy = false;
+  loadSell();
+  loadMarket();
+};
+
 // ---- Arcade > Cartodle : toutes les cartes, filtrées par les indices du jour ----
 let dle = null, dleEx = [];
 const DLE_SEL = {dleR: 'r', dleLic: 'lic', dleSer: 'ser', dleStyle: 'style', dleStudio: 'studio'};
@@ -2099,11 +2270,13 @@ $('dleFilters').oninput = $('dleFilters').onchange = renderDle;
 $('dleReset').onclick = () => { $('dleFilters').querySelectorAll('input,select').forEach(i => { i.value = ''; }); dleEx = []; renderDle(); };
 
 function showView() {
-  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#marche-vente': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
   for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats', 'viewArcade']) $(id).hidden = id !== view;
   if (view === 'viewMarket') { mkNewSince ??= mkSeenAt; loadMarket(); } else mkNewSince = null; // nouveaux achats surlignés pendant la visite
   paintMkBadge();
-  $('subMkFixed').hidden = location.hash === '#marche-encheres';
+  $('subMkFixed').hidden = location.hash !== '#marche';
+  $('subMkSell').hidden = location.hash !== '#marche-vente';
+  if (location.hash === '#marche-vente') loadSell();
   $('subMkAuctions').hidden = location.hash !== '#marche-encheres';
   $('subStatsPlayers').hidden = location.hash !== '#stats';
   $('subStatsLicences').hidden = location.hash !== '#stats-licences';

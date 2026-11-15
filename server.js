@@ -563,7 +563,7 @@ async function cartodleCards() {
   return data;
 }
 // maxAge : la fiche ouverte reste fraîche, les pastilles de toute la liste relisent le jeu bien moins souvent.
-async function tradeData(user, maxAge = TRADE_CACHE_MS) {
+async function mineData() {
   if (!mineCache || Date.now() - mineCache.at >= TRADE_CACHE_MS) {
     const [owned, wishes, market] = await Promise.all([
       selectAll('owned_cards', 'card_id,count', 'card_id'),
@@ -573,8 +573,13 @@ async function tradeData(user, maxAge = TRADE_CACHE_MS) {
     // Comme sur le site : dans un échange en attente, j'ai proposé give contre get ; dans un échange reçu, c'est l'inverse.
     const waiting = (market?.trades || []).filter(t => t.status === 'attente');
     const incoming = waiting.flatMap(t => (t.mine ? t.get : t.give) || []), outgoing = waiting.flatMap(t => (t.mine ? t.give : t.get) || []);
-    mineCache = { at: Date.now(), owned: new Map(owned.map(r => [r.card_id, r.count])), wishes: new Set(wishes.map(r => r.card_id)), incoming: new Set(incoming), outgoing: new Set(outgoing) };
+    mineCache = { at: Date.now(), owned: new Map(owned.map(r => [r.card_id, r.count])), wishes: new Set(wishes.map(r => r.card_id)), incoming: new Set(incoming), outgoing: new Set(outgoing),
+      listed: (market?.mine || []).filter(l => l.status === 'active').length };
   }
+  return mineCache;
+}
+async function tradeData(user, maxAge = TRADE_CACHE_MS) {
+  await mineData();
   const { theirs, read } = await theirsOf(user, maxAge);
   return { owned: mineCache.owned, wishes: mineCache.wishes, incoming: mineCache.incoming, outgoing: mineCache.outgoing, theirs, read };
 }
@@ -906,6 +911,32 @@ async function saveSnipe({ id, max }) {
   return [200, { ok: true }];
 }
 
+// Marché > Vendre : mes cartes avec leur cote, puis la mise en vente en masse, une annonce à prix fixe par exemplaire, comme le site.
+const SELL_MAX = 50, SELL_HOURS = [24, 72, 168];
+async function sellable() {
+  const [m, k] = await Promise.all([mineData(), cotes()]), catalog = catalogMap(), cards = [];
+  for (const [id, n] of m.owned) {
+    const c = catalog.get(id);
+    if (c && n > 0) cards.push({ ...c, count: n, pending: m.outgoing.has(id), value: k[id]?.[0] || BASE_VALUE[c.rarity] || BASE_VALUE[0] });
+  }
+  return { room: Math.max(0, SELL_MAX - m.listed), cards,
+    players: db.prepare('SELECT id, name FROM players WHERE id != ? ORDER BY name').all(kvGet('session')?.user_id || '').map(p => [p.id, p.name]) };
+}
+async function sellCards({ items, hours, trade }) {
+  if (!SELL_HOURS.includes(hours)) return [400, { error: 'Durée invalide.' }];
+  if (!Array.isArray(items) || !items.length || items.length > SELL_MAX
+    || !items.every(x => typeof x?.id === 'string' && x.id && Number.isInteger(x.price) && x.price >= 1 && x.price <= 1e7))
+    return [400, { error: `De 1 à ${SELL_MAX} annonces, à un prix entier de 1 à 10 000 000 pièces.` }];
+  let ok = 0, error = null;
+  for (const { id, price } of items) { // une à une : la première erreur (plus d'exemplaire, limite d'annonces…) arrête la suite
+    try { await sb('/rest/v1/rpc/market_sell', { method: 'POST', body: { p_card: id, p_kind: 'fixe', p_price: price, p_hours: hours, p_trade: trade === true, p_criee: false, p_salon: 's1' } }); ok++; }
+    catch (e) { error = e.message; break; }
+  }
+  mineCache = null; market.at = 0;
+  if (ok) log(`Marché : ${ok} annonce${ok > 1 ? 's' : ''} mise${ok > 1 ? 's' : ''} en vente`);
+  return [200, { ok, error }];
+}
+
 async function marketState() {
   if (kvGet('session') && Date.now() - market.at >= MARKET_CACHE_MS) await listMarket().catch(e => log('Marché : ' + e.message));
   const catalog = catalogMap(), card = id => ({ id, ...catalog.get(id) }), open = market.listings.filter(l => !l.mine && (l.status ?? 'active') === 'active');
@@ -993,6 +1024,7 @@ const server = http.createServer(async (req, res) => {
         ? (await pendingTrades()).filter(t => t.mine).flatMap(t => t.get.map(c => c.id)) : [];
       return send(...missingFor(ref, url.searchParams.get('dupes') === '1', asked));
     }
+    if (req.method === 'GET' && url.pathname === '/api/market/sellable') return send(200, await sellable());
     if (req.method === 'GET' && url.pathname === '/api/arcade/cartodle') return send(200, await cartodleCards());
     if (req.method === 'GET' && url.pathname === '/api/notifications')
       return send(200, await sb('/rest/v1/notifications?select=id,kind,title,body,link,read_at,created_at&order=created_at.desc&limit=40'));
@@ -1038,6 +1070,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/trades/propose') return send(...await proposeTrade(body));
       if (url.pathname === '/api/pending/respond') return send(...await respondTrade(body));
       if (url.pathname === '/api/recycle') return send(...await startRecycle(body));
+      if (url.pathname === '/api/market/sell') return send(...await sellCards(body));
       if (url.pathname === '/api/routines') return send(...saveRoutines(body.routines));
       if (url.pathname === '/api/snipes') return send(...await saveSnipe(body));
       if (url.pathname === '/api/stats/refresh') return send(...await refreshPlayer(body));
