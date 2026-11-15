@@ -649,17 +649,18 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
       <div class="xhead"><h2>Cartodle <span id="dleCount"></span></h2>
         <div class="xfilters" id="dleFilters">
           <input type="search" id="dleQ" placeholder="Nom" aria-label="Nom de la carte" class="mksel">
-          <select id="dleR" aria-label="Rareté" class="mksel"></select>
-          <select id="dleLic" aria-label="Univers" class="mksel"></select>
-          <select id="dleSer" aria-label="Jeu" class="mksel"></select>
-          <select id="dleStyle" aria-label="Genre" class="mksel"></select>
-          <select id="dleStudio" aria-label="Studio" class="mksel"></select>
+          <span><select id="dleROp" aria-label="Rareté : égale ou différente" class="mksel"><option value="">=</option><option value="!">≠</option></select><select id="dleR" aria-label="Rareté" class="mksel"></select></span>
+          <span><select id="dleLicOp" aria-label="Univers : égal ou différent" class="mksel"><option value="">=</option><option value="!">≠</option></select><select id="dleLic" aria-label="Univers" class="mksel"></select></span>
+          <span><select id="dleSerOp" aria-label="Jeu : égal ou différent" class="mksel"><option value="">=</option><option value="!">≠</option></select><select id="dleSer" aria-label="Jeu" class="mksel"></select></span>
+          <span><select id="dleStyleOp" aria-label="Genre : égal ou différent" class="mksel"><option value="">=</option><option value="!">≠</option></select><select id="dleStyle" aria-label="Genre" class="mksel"></select></span>
+          <span><select id="dleStudioOp" aria-label="Studio : égal ou différent" class="mksel"><option value="">=</option><option value="!">≠</option></select><select id="dleStudio" aria-label="Studio" class="mksel"></select></span>
           <span>Année <select id="dleYop" aria-label="Comparaison de l'année" class="mksel"><option value="">toutes</option><option value="=">=</option><option value=">">&gt;</option><option value="<">&lt;</option><option value="..">entre</option></select>
             <input type="number" id="dleY1" aria-label="Année" class="mksel" style="width:6em" hidden>
             <span id="dleY2w" hidden>et <input type="number" id="dleY2" aria-label="Année de fin" class="mksel" style="width:6em"></span></span>
           <button class="ghost" type="button" id="dleReset">Effacer</button>
         </div></div>
-      <p class="xnote">Indices du Cartodle : univers = licence, jeu = série, année du jeu (sinon celle de la licence). Licences triées de celle qui a le plus de cartes restantes à celle qui en a le moins. « Entre » inclut les deux années.</p>
+      <div class="xfilters" id="dleEx" style="margin-bottom:8px"></div>
+      <p class="xnote">Indices du Cartodle : univers = licence, jeu = série, année du jeu (sinon celle de la licence). Avec « ≠ », chaque valeur choisie est exclue et s'ajoute aux exclusions : clique dessus pour la retirer. Licences triées de celle qui a le plus de cartes restantes à celle qui en a le moins. « Entre » inclut les deux années.</p>
       <div class="dle" id="dleList"><p class="xnote">Chargement…</p></div>
     </section>
   </div>
@@ -2038,7 +2039,7 @@ $('mkQuietForm').onsubmit = e => e.preventDefault();
 setInterval(() => { if (!$('viewMarket').hidden) loadMarket(); }, 30000);
 
 // ---- Arcade > Cartodle : toutes les cartes, filtrées par les indices du jour ----
-let dle = null;
+let dle = null, dleEx = [];
 const DLE_SEL = {dleR: 'r', dleLic: 'lic', dleSer: 'ser', dleStyle: 'style', dleStudio: 'studio'};
 const DLE_ALL = {dleR: 'Toutes raretés', dleLic: 'Tous univers', dleSer: 'Tous jeux', dleStyle: 'Tous genres', dleStudio: 'Tous studios'};
 const dleLabel = (k, v) => k === 'r' ? RARITIES[v] ?? '?' : k === 'ser' && v === 'Globale' ? 'Persos récurrents' : v || '?';
@@ -2054,8 +2055,16 @@ function dleYearOk(y) {
 function renderDle() {
   if (!dle) return;
   $('dleY1').hidden = !$('dleYop').value; $('dleY2w').hidden = $('dleYop').value !== '..';
+  // En mode ≠, la valeur choisie rejoint les exclusions et la liste revient à « Tous ».
+  for (const [id, k] of Object.entries(DLE_SEL)) if ($(id + 'Op').value && $(id).value) {
+    if (!dleEx.some(x => x.k === k && x.v === $(id).value)) dleEx.push({k, v: $(id).value});
+    $(id).value = '';
+  }
+  $('dleEx').replaceChildren(...dleEx.map(x => el('button', {type: 'button', className: 'ghost', title: 'Retirer cette exclusion',
+    textContent: `${{r: 'Rareté', lic: 'Univers', ser: 'Jeu', style: 'Genre', studio: 'Studio'}[x.k]} ≠ ${dleLabel(x.k, x.k === 'r' ? +x.v : x.v)} ✕`,
+    onclick: () => { dleEx = dleEx.filter(y => y !== x); renderDle(); }})));
   const q = $('dleQ').value.trim().toLowerCase(), pick = Object.fromEntries(Object.entries(DLE_SEL).map(([id, k]) => [k, $(id).value]));
-  const base = dle.filter(c => (!q || c.name.toLowerCase().includes(q)) && dleYearOk(c.year));
+  const base = dle.filter(c => (!q || c.name.toLowerCase().includes(q)) && dleYearOk(c.year) && !dleEx.some(x => String(c[x.k]) === x.v));
   const ok = (c, skip) => Object.entries(pick).every(([k, v]) => k === skip || v === '' || String(c[k]) === v);
   for (const [id, k] of Object.entries(DLE_SEL)) {
     const n = new Map();
@@ -2087,7 +2096,7 @@ async function loadDle() {
   catch (e) { $('dleList').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
 }
 $('dleFilters').oninput = $('dleFilters').onchange = renderDle;
-$('dleReset').onclick = () => { $('dleFilters').querySelectorAll('input,select').forEach(i => { i.value = ''; }); renderDle(); };
+$('dleReset').onclick = () => { $('dleFilters').querySelectorAll('input,select').forEach(i => { i.value = ''; }); dleEx = []; renderDle(); };
 
 function showView() {
   const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
