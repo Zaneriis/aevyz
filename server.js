@@ -501,11 +501,24 @@ function statsPlayers() {
     FROM players p LEFT JOIN snaps s ON s.player = p.id AND s.at = (SELECT MAX(at) FROM snaps WHERE player = p.id) ORDER BY s.pos_uniq IS NULL, s.pos_uniq`).all()
     .map(p => ({ ...p, dupes: p.dupes ? JSON.parse(p.dupes) : null, me: p.id === me }));
 }
+// Envies d'un joueur par licence (la plus voulue d'abord), avec combien j'en ai ; null si ses envies n'ont pas été lues.
+function wishesByLicence(id) {
+  const w = db.prepare('SELECT wishes FROM players WHERE id = ?').get(id)?.wishes;
+  if (!w) return null;
+  const catalog = catalogMap(), mine = JSON.parse(db.prepare('SELECT cards FROM players WHERE id = ?').get(kvGet('session')?.user_id || '')?.cards || '{}'), m = new Map();
+  for (const cid of JSON.parse(w)) {
+    const c = catalog.get(cid);
+    if (c) (m.get(c.licence) || m.set(c.licence, []).get(c.licence)).push({ ...c, mine: mine[cid] || 0 });
+  }
+  return [...m].map(([licence, cards]) => ({ licence, cards: cards.sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.name || '').localeCompare(b.name || '', 'fr')) }))
+    .sort((a, b) => b.cards.length - a.cards.length || (a.licence || '').localeCompare(b.licence || '', 'fr'));
+}
 function statsPlayer(id) {
   return {
     snaps: db.prepare(`SELECT at, ${SNAP_KEYS.join(', ')} FROM snaps WHERE player = ? ORDER BY at`).all(id),
     rarity: db.prepare('SELECT at, counts FROM rar_snaps WHERE player = ? ORDER BY at').all(id).map(r => ({ at: r.at, counts: JSON.parse(r.counts) })),
     dupes: JSON.parse(db.prepare('SELECT dupes FROM players WHERE id = ?').get(id)?.dupes || 'null'),
+    wishes: wishesByLicence(id),
     // ponytail: cartes connues du catalogue local, retirées du jeu comprises ; filtrer si le site en retire beaucoup.
     rarityTotals: db.prepare('SELECT rarity, COUNT(*) AS n FROM cards WHERE rarity IS NOT NULL GROUP BY rarity').all()
       .reduce((t, r) => { t[r.rarity] = r.n; return t; }, [0, 0, 0, 0, 0, 0, 0]),

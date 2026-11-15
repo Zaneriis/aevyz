@@ -338,6 +338,10 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .lvcards{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
 .lvcards span{font-size:.8rem;padding:2px 7px;border-radius:7px;background:#0005;border-left:3px solid var(--rc)}
 .lvcards b{color:#7be08f}
+.wishlic{border-top:1px solid #ffffff0a;padding:6px 0}
+.wishlic summary{cursor:pointer}
+.wishlic summary small{color:var(--muted)}
+.wishlic .lvcards{margin:6px 0 2px 14px}
 .envy td small{display:block;color:var(--muted);font-size:.75rem}
 .envy .ghost{padding:3px 10px;font-size:.78rem;white-space:nowrap}
 .envy .bar i{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);min-width:2px}
@@ -1794,6 +1798,23 @@ function rereadBtn(p) {
   b.title = 'Relit sa collection sur Aevyz et ajoute un point si ses raretés ont changé.';
   return el('span', {className: 'reread'}, b, note);
 }
+// Ses envies, une licence repliable par bloc ; ×n en vert : j'ai cette carte.
+const wishChip = c => {
+  const s = el('span', {textContent: c.name, title: `${RARITIES[c.rarity] ?? '?'}${c.mine ? ` · tu l'as ×${c.mine}` : ''}`}, ...(c.mine ? [el('b', {textContent: ` ×${c.mine}`})] : []));
+  s.style.setProperty('--rc', RCOL[c.rarity ?? 0]);
+  return s;
+};
+const wishOpen = new Set(); // licences dépliées, gardées quand la fiche se redessine
+function wishesBlock(w, p) {
+  if (!w) return el('p', {className: 'xnote glass panel', textContent: 'Envies : pas encore lues (lecture à tour de rôle) ou collection privée.'});
+  const n = w.reduce((s, l) => s + l.cards.length, 0);
+  return el('div', {className: 'glass panel'}, el('h3', {textContent: `Envies · ${plural(n, 'carte')}, ${plural(w.length, 'licence')}`}),
+    ...(w.length ? w.map(l => el('details', {className: 'wishlic', open: wishOpen.has(p.id + '|' + l.licence),
+      ontoggle: e => wishOpen[e.target.open ? 'add' : 'delete'](p.id + '|' + l.licence)},
+      el('summary', {}, el('b', {textContent: l.licence || '?'}), el('small', {textContent: ` · ${plural(l.cards.length, 'carte')}` + (p.me ? '' : `, ${l.cards.filter(c => c.mine).length} que tu as`)})),
+      el('div', {className: 'lvcards'}, ...l.cards.map(wishChip))))
+      : [el('p', {className: 'xnote', textContent: 'Aucune envie.'})]));
+}
 function renderStatsPlayer() {
   if (!statsData) return;
   const {p, d} = statsData;
@@ -1805,6 +1826,7 @@ function renderStatsPlayer() {
     el('div', {className: 'tiles'}, stat('Cartes', n(p.total)), stat('Uniques', n(p.uniq)), stat('Boosters', n(p.opened)), stat('Mythiques', n(p.mythics)),
       stat('Classement uniques', p.pos_uniq ? '#' + p.pos_uniq : '–'), stat('Total', p.pos_total ? '#' + p.pos_total : '–'), stat('Boosters', p.pos_opened ? '#' + p.pos_opened : '–'), stat('Mythiques', p.pos_myth ? '#' + p.pos_myth : '–')),
     rarityProgress(d),
+    wishesBlock(d.wishes, p),
     el('div', {className: 'xhead'}, el('h3', {textContent: 'Période des graphiques'}), rangePick()),
     chartCard('col', 'Collection', [
       {key: 'total', label: 'Cartes totales', points: col('total')}, {key: 'uniq', label: 'Uniques', points: col('uniq')},
