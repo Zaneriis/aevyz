@@ -303,6 +303,14 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .chart .line{fill:none;stroke-width:2;stroke-linejoin:round}
 .chart .cross{stroke:#ffffff55;stroke-width:1}
 .chart .tip{position:absolute;pointer-events:none;transform:translate(-50%,-110%);background:#15172a;border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:.8rem;white-space:nowrap}
+.dle{display:grid;gap:6px}
+.dle details{padding:0}
+.dle summary{cursor:pointer;padding:9px 14px;font-weight:700;display:flex;justify-content:space-between;gap:10px}
+.dle summary small{color:var(--muted);font-weight:400}
+.dle ul{list-style:none;margin:0;padding:0 14px 10px;display:grid;gap:4px}
+.dle li{display:flex;gap:10px;align-items:center;font-size:.92rem;border-left:3px solid var(--rc);padding-left:8px}
+.dle li img{width:34px;height:47px;object-fit:cover;border-radius:4px;background:#0005}
+.dle li small{color:var(--muted)}
 .envy{width:100%;border-collapse:collapse;font-size:.92rem}
 .envy th{text-align:left;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.6px;padding:6px 8px;border-bottom:1px solid var(--line)}
 .envy td{padding:6px 8px;border-bottom:1px solid #ffffff0a;font-variant-numeric:tabular-nums}
@@ -385,6 +393,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
     <a href="#recyclage">Recyclage</a>
     <a href="#marche">Marché<mark class="pbadge" id="mkBadge" hidden></mark></a>
     <a href="#stats">Stats</a>
+    <a href="#arcade">Arcade</a>
   </nav>
 
   <div id="viewBoosters">
@@ -629,6 +638,29 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
           </select></div></div>
       <p class="xnote" id="lvInfo"></p>
       <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th>Licence</th><th>Joueurs</th><th>Cartes voulues</th><th>Cartes dans la licence</th></tr></thead><tbody id="lvBody"></tbody></table></div>
+    </section>
+  </div>
+
+  <div id="viewArcade" hidden>
+    <nav class="tabs subtabs" aria-label="Arcade">
+      <a href="#arcade">Cartodle</a>
+    </nav>
+    <section>
+      <div class="xhead"><h2>Cartodle <span id="dleCount"></span></h2>
+        <div class="xfilters" id="dleFilters">
+          <input type="search" id="dleQ" placeholder="Nom" aria-label="Nom de la carte" class="mksel">
+          <select id="dleR" aria-label="Rareté" class="mksel"></select>
+          <select id="dleLic" aria-label="Univers" class="mksel"></select>
+          <select id="dleSer" aria-label="Jeu" class="mksel"></select>
+          <select id="dleStyle" aria-label="Genre" class="mksel"></select>
+          <select id="dleStudio" aria-label="Studio" class="mksel"></select>
+          <span>Année <select id="dleYop" aria-label="Comparaison de l'année" class="mksel"><option value="">toutes</option><option value="=">=</option><option value=">">&gt;</option><option value="<">&lt;</option><option value="..">entre</option></select>
+            <input type="number" id="dleY1" aria-label="Année" class="mksel" style="width:6em" hidden>
+            <span id="dleY2w" hidden>et <input type="number" id="dleY2" aria-label="Année de fin" class="mksel" style="width:6em"></span></span>
+          <button class="ghost" type="button" id="dleReset">Effacer</button>
+        </div></div>
+      <p class="xnote">Indices du Cartodle : univers = licence, jeu = série, année du jeu (sinon celle de la licence). Licences triées de celle qui a le plus de cartes restantes à celle qui en a le moins. « Entre » inclut les deux années.</p>
+      <div class="dle" id="dleList"><p class="xnote">Chargement…</p></div>
     </section>
   </div>
 
@@ -2005,9 +2037,61 @@ $('mkQuietForm').onchange = async () => {
 $('mkQuietForm').onsubmit = e => e.preventDefault();
 setInterval(() => { if (!$('viewMarket').hidden) loadMarket(); }, 30000);
 
+// ---- Arcade > Cartodle : toutes les cartes, filtrées par les indices du jour ----
+let dle = null;
+const DLE_SEL = {dleR: 'r', dleLic: 'lic', dleSer: 'ser', dleStyle: 'style', dleStudio: 'studio'};
+const DLE_ALL = {dleR: 'Toutes raretés', dleLic: 'Tous univers', dleSer: 'Tous jeux', dleStyle: 'Tous genres', dleStudio: 'Tous studios'};
+const dleLabel = (k, v) => k === 'r' ? RARITIES[v] ?? '?' : k === 'ser' && v === 'Globale' ? 'Persos récurrents' : v || '?';
+function dleYearOk(y) {
+  const op = $('dleYop').value, a = +$('dleY1').value, b = +$('dleY2').value;
+  if (!op || !$('dleY1').value) return true;
+  if (op === '=') return y === a;
+  if (op === '>') return y > a;
+  if (op === '<') return y < a;
+  return !$('dleY2').value || (y >= Math.min(a, b) && y <= Math.max(a, b));
+}
+// Chaque liste ne propose que les valeurs encore possibles avec les autres filtres.
+function renderDle() {
+  if (!dle) return;
+  $('dleY1').hidden = !$('dleYop').value; $('dleY2w').hidden = $('dleYop').value !== '..';
+  const q = $('dleQ').value.trim().toLowerCase(), pick = Object.fromEntries(Object.entries(DLE_SEL).map(([id, k]) => [k, $(id).value]));
+  const base = dle.filter(c => (!q || c.name.toLowerCase().includes(q)) && dleYearOk(c.year));
+  const ok = (c, skip) => Object.entries(pick).every(([k, v]) => k === skip || v === '' || String(c[k]) === v);
+  for (const [id, k] of Object.entries(DLE_SEL)) {
+    const n = new Map();
+    for (const c of base) if (ok(c, k)) n.set(c[k], (n.get(c[k]) || 0) + 1);
+    const vals = [...n.keys()].sort((x, y) => k === 'r' ? x - y : dleLabel(k, x).localeCompare(dleLabel(k, y), 'fr'));
+    $(id).replaceChildren(el('option', {value: '', textContent: DLE_ALL[id]}), ...vals.map(v => el('option', {value: v, textContent: `${dleLabel(k, v)} (${n.get(v)})`})));
+    $(id).value = pick[k];
+  }
+  const hits = base.filter(c => ok(c)), groups = new Map();
+  for (const c of hits) (groups.get(c.lic) || groups.set(c.lic, []).get(c.lic)).push(c);
+  const sorted = [...groups].sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]), 'fr'));
+  $('dleCount').textContent = `· ${plural(hits.length, 'carte')}, ${plural(sorted.length, 'licence')}`;
+  $('dleList').replaceChildren(...(sorted.length ? sorted.map(([lic, cards]) => {
+    const s = cards[0], d = el('details', {className: 'glass'}, el('summary', {}, el('span', {textContent: lic || '?'}), el('small', {textContent: `${plural(cards.length, 'carte')} · ${s.style || '?'} · ${s.studio || '?'}`})));
+    // Liste construite à l'ouverture : des milliers de cartes repliées ne coûtent rien.
+    d.ontoggle = () => { if (d.open && !d.querySelector('ul')) d.append(el('ul', {}, ...cards.sort((a, b) => b.r - a.r || a.name.localeCompare(b.name, 'fr')).map(c => {
+      const li = el('li', {}, el('img', {src: c.art || '', alt: '', loading: 'lazy'}), el('span', {}, el('b', {textContent: c.name}), el('br'), el('small', {textContent: `${RARITIES[c.r] ?? '?'} · ${dleLabel('ser', c.ser)} · ${c.year || '?'}`})));
+      li.style.setProperty('--rc', RCOL[c.r] ?? RCOL[0]);
+      return li;
+    }))); };
+    if (sorted.length <= 3) d.open = true;
+    return d;
+  }) : [el('p', {className: 'xnote', textContent: 'Aucune carte ne correspond.'})]));
+  for (const d of $('dleList').querySelectorAll('details[open]')) d.ontoggle();
+}
+async function loadDle() {
+  if (dle) return renderDle();
+  try { dle = await getJson('api/arcade/cartodle'); renderDle(); }
+  catch (e) { $('dleList').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+$('dleFilters').oninput = $('dleFilters').onchange = renderDle;
+$('dleReset').onclick = () => { $('dleFilters').querySelectorAll('input,select').forEach(i => { i.value = ''; }); renderDle(); };
+
 function showView() {
-  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats'}, view = views[location.hash] || 'viewBoosters';
-  for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats']) $(id).hidden = id !== view;
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
+  for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats', 'viewArcade']) $(id).hidden = id !== view;
   if (view === 'viewMarket') { mkNewSince ??= mkSeenAt; loadMarket(); } else mkNewSince = null; // nouveaux achats surlignés pendant la visite
   paintMkBadge();
   $('subMkFixed').hidden = location.hash === '#marche-encheres';
@@ -2030,6 +2114,7 @@ function showView() {
   if (view === 'viewTrades') loadPending();
   if (propose) { scanStopped = false; loadPlayers().then(scanPlayers); }
   if (view === 'viewRecycle') loadRecycle();
+  if (view === 'viewArcade') loadDle();
   document.querySelectorAll('.subtabs a').forEach(a => { if (a.hash === location.hash) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
 }
 function saveFilters() {

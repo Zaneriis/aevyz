@@ -544,6 +544,24 @@ function licenceEnvy() {
   }
   return envyCache = { known: rows.length, licences: [...m.values()].sort((a, b) => b.players - a.players || b.cards - a.cards) };
 }
+// Arcade > Cartodle : cartes actives avec les indices du jeu. Année du jeu (series_years), sinon celle de la licence, comme le site.
+let dleCache = null;
+async function cartodleCards() {
+  if (dleCache && Date.now() - dleCache.at < 6 * 3600e3) return dleCache.data;
+  const [cards, lics, years] = await Promise.all([
+    selectAll('cards', 'id,name,licence,series,rarity,active'),
+    selectAll('licences', 'name,style,studio,year', 'name'),
+    selectAll('series_years', 'licence,series,year', 'licence'),
+  ]);
+  const lic = new Map(lics.map(l => [l.name, l])), sy = new Map(years.map(y => [y.licence + '::' + y.series, y.year])), art = catalogMap();
+  const data = cards.filter(c => c.active).map(c => {
+    const l = lic.get(c.licence) || {}, ser = c.series || 'Globale';
+    return { id: c.id, name: c.name, lic: c.licence, ser, r: c.rarity, style: l.style || '', studio: l.studio || '',
+      year: +sy.get(c.licence + '::' + ser) || +l.year || 0, art: art.get(c.id)?.art || null };
+  });
+  dleCache = { at: Date.now(), data };
+  return data;
+}
 // maxAge : la fiche ouverte reste fraîche, les pastilles de toute la liste relisent le jeu bien moins souvent.
 async function tradeData(user, maxAge = TRADE_CACHE_MS) {
   if (!mineCache || Date.now() - mineCache.at >= TRADE_CACHE_MS) {
@@ -975,6 +993,7 @@ const server = http.createServer(async (req, res) => {
         ? (await pendingTrades()).filter(t => t.mine).flatMap(t => t.get.map(c => c.id)) : [];
       return send(...missingFor(ref, url.searchParams.get('dupes') === '1', asked));
     }
+    if (req.method === 'GET' && url.pathname === '/api/arcade/cartodle') return send(200, await cartodleCards());
     if (req.method === 'GET' && url.pathname === '/api/notifications')
       return send(200, await sb('/rest/v1/notifications?select=id,kind,title,body,link,read_at,created_at&order=created_at.desc&limit=40'));
     if (req.method === 'GET' && url.pathname === '/api/trades') {
