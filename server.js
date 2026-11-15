@@ -562,6 +562,17 @@ async function cartodleCards() {
   dleCache = { at: Date.now(), data };
   return data;
 }
+// Stats > Licences, détail : qui veut quelles cartes de la licence, et combien j'en ai (dernière lecture de ma collection).
+function licenceWishers(licence) {
+  const catalog = catalogMap(), myId = kvGet('session')?.user_id || '';
+  const mine = JSON.parse(db.prepare('SELECT cards FROM players WHERE id = ?').get(myId)?.cards || '{}'), out = [];
+  for (const p of db.prepare('SELECT id, name, wishes FROM players WHERE wishes IS NOT NULL').all()) {
+    const cards = JSON.parse(p.wishes).map(id => catalog.get(id)).filter(c => c?.licence === licence)
+      .map(c => ({ ...c, mine: mine[c.id] || 0 })).sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.name || '').localeCompare(b.name || '', 'fr'));
+    if (cards.length) out.push({ id: p.id, name: p.name, me: p.id === myId, cards });
+  }
+  return out.sort((a, b) => b.cards.length - a.cards.length || (a.name || '').localeCompare(b.name || '', 'fr'));
+}
 // maxAge : la fiche ouverte reste fraîche, les pastilles de toute la liste relisent le jeu bien moins souvent.
 async function mineData() {
   if (!mineCache || Date.now() - mineCache.at >= TRADE_CACHE_MS) {
@@ -1017,6 +1028,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/stats/players') return send(200, statsPlayers());
     if (req.method === 'GET' && url.pathname === '/api/stats/player') return send(200, statsPlayer(url.searchParams.get('id') || ''));
     if (req.method === 'GET' && url.pathname === '/api/stats/licences') return send(200, licenceEnvy());
+    if (req.method === 'GET' && url.pathname === '/api/stats/licence') return send(200, licenceWishers(url.searchParams.get('name') || ''));
     if (req.method === 'GET' && url.pathname === '/api/stats/missing') {
       const ref = url.searchParams.get('id') || '';
       // Seulement pour ma collection : les cartes demandées dans mes échanges envoyés en attente.

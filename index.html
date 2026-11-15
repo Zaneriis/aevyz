@@ -332,6 +332,12 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 #dpHead th[style],#msHead th[style]{color:var(--rc);box-shadow:inset 0 -2px color-mix(in srgb,var(--rc) 70%,transparent)}
 #dpBody td[style]:not(.zero),#msBody td[style]:not(.zero){color:color-mix(in srgb,var(--rc) 75%,#fff);font-weight:700}
 .envy tr.me td{background:#ffc83d0a}
+.envy td button.plink{all:unset;cursor:pointer;font-weight:700}
+.envy td button.plink:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lvwho{display:grid;gap:10px;padding:4px 0 8px 14px}
+.lvcards{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.lvcards span{font-size:.8rem;padding:2px 7px;border-radius:7px;background:#0005;border-left:3px solid var(--rc)}
+.lvcards b{color:#7be08f}
 .envy td small{display:block;color:var(--muted);font-size:.75rem}
 .envy .ghost{padding:3px 10px;font-size:.78rem;white-space:nowrap}
 .envy .bar i{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);min-width:2px}
@@ -1883,14 +1889,42 @@ function renderEnvy() {
     .sort((a, b) => key === 'licence' ? a.licence.localeCompare(b.licence, 'fr') : key === 'ratio' ? ratio(b) - ratio(a) : b[key] - a[key] || b.cards - a.cards);
   const max = Math.max(1, ...envyData.licences.map(l => l.players));
   $('lvInfo').textContent = `D'après les envies de ${plural(envyData.known, 'joueur')} lus (collections publiques, lues à tour de rôle). Les suggestions d'échange s'en servent : tu donnes d'abord les licences peu enviées et tu demandes les plus enviées.`;
-  $('lvBody').replaceChildren(...(list.length ? list.map(l => el('tr', {},
-    el('td', {textContent: l.licence}),
-    el('td', {}, el('span', {className: 'bar'}, el('i', {style: `width:${l.players / max * 120}px`}), String(l.players))),
-    el('td', {textContent: l.cards.toLocaleString('fr-FR')}), el('td', {textContent: l.size || '–'})))
-    : [el('tr', {}, el('td', {colSpan: 4, className: 'xnote', textContent: 'Aucune envie connue pour l\'instant.'}))]));
+  $('lvBody').replaceChildren(...(list.length ? list.flatMap(l => {
+    const open = envyOpen === l.licence, btn = el('button', {type: 'button', className: 'plink', textContent: `${open ? '▾' : '▸'} ${l.licence}`, onclick: () => openEnvy(open ? null : l.licence)});
+    btn.setAttribute('aria-expanded', open);
+    const row = el('tr', {}, el('td', {}, btn),
+      el('td', {}, el('span', {className: 'bar'}, el('i', {style: `width:${l.players / max * 120}px`}), String(l.players))),
+      el('td', {textContent: l.cards.toLocaleString('fr-FR')}), el('td', {textContent: l.size || '–'}));
+    return open ? [row, el('tr', {}, el('td', {colSpan: 4}, envyDetail(l.licence)))] : [row];
+  }) : [el('tr', {}, el('td', {colSpan: 4, className: 'xnote', textContent: 'Aucune envie connue pour l\'instant.'}))]));
+}
+// Clic sur une licence : les joueurs qui en veulent des cartes, et lesquelles.
+let envyOpen = null;
+const envyWho = new Map();
+async function openEnvy(lic) {
+  envyOpen = lic;
+  renderEnvy();
+  if (!lic || envyWho.has(lic)) return;
+  try { envyWho.set(lic, await getJson(`api/stats/licence?name=${encodeURIComponent(lic)}`)); }
+  catch (e) { envyWho.set(lic, e.message); }
+  if (envyOpen === lic) renderEnvy();
+}
+function envyDetail(lic) {
+  const d = envyWho.get(lic);
+  if (!d) return el('p', {className: 'xnote', textContent: 'Chargement…'});
+  if (typeof d === 'string') return el('p', {className: 'xnote', textContent: d});
+  return el('div', {className: 'lvwho'}, ...d.map(p => el('div', {},
+    p.me ? el('b', {textContent: `${p.name || 'Joueur'} (toi)`}) : el('a', {href: '#echanges', className: 'plink', title: 'Voir les échanges possibles', textContent: p.name || 'Joueur', onclick: () => pickTrade(p.id, p.name)}),
+    el('small', {textContent: ` · ${plural(p.cards.length, 'carte')}`}),
+    el('div', {className: 'lvcards'}, ...p.cards.map(c => {
+      const s = el('span', {textContent: c.name, title: `${RARITIES[c.rarity] ?? '?'}${c.mine ? ` · tu l'as ×${c.mine}` : ''}`},
+        ...(c.mine ? [el('b', {textContent: ` ×${c.mine}`})] : []));
+      s.style.setProperty('--rc', RCOL[c.rarity ?? 0]);
+      return s;
+    })))));
 }
 async function loadEnvy() {
-  try { envyData = await getJson('api/stats/licences'); renderEnvy(); }
+  try { envyData = await getJson('api/stats/licences'); envyWho.clear(); renderEnvy(); }
   catch (e) { $('lvInfo').textContent = e.message; }
 }
 $('lvSearch').oninput = renderEnvy;
