@@ -587,6 +587,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
           <select id="slHas" aria-label="Cartes qu'un joueur a" class="mksel" title="N'affiche que tes cartes que ce joueur possède déjà. Plusieurs joueurs possibles : chacun s'ajoute aux filtres."></select>
           <select id="slHasNot" aria-label="Cartes qu'un joueur n'a pas" class="mksel" title="N'affiche que tes cartes que ce joueur ne possède pas. Plusieurs joueurs possibles : chacun s'ajoute aux filtres."></select>
           <label class="xsafe"><input type="checkbox" id="slDup">Seulement mes doublons</label>
+          <label class="xsafe" title="N'affiche que les cartes dont tu as au moins ce nombre d'exemplaires.">Au moins <input type="number" id="slMin" min="1" class="mksel" style="width:4.5em" aria-label="Nombre minimum d'exemplaires"> exemplaires</label>
           <label class="xsafe" title="Ne propose jamais ton dernier exemplaire."><input type="checkbox" id="slKeep" checked>Garder un exemplaire</label>
           <label class="xsafe" title="Écarte les cartes que tu donnes dans un échange en attente."><input type="checkbox" id="slPend" checked>Sans les cartes en attente d'échange</label>
         </div>
@@ -2144,10 +2145,10 @@ const mkFee = p => p < 50 ? 0 : Math.round(p * (p <= 200 ? .05 : p <= 1000 ? .08
 let slWhos = []; // « Que X a / n'a pas » cumulables : [{id, not}], toutes les conditions doivent tenir
 const slAvail = c => c.count - ($('slKeep').checked ? 1 : 0);
 function slList() {
-  const t = norm($('slQ').value.trim()), r = $('slRar').value, l = $('slLic').value;
+  const t = norm($('slQ').value.trim()), r = $('slRar').value, l = $('slLic').value, min = Math.floor(+$('slMin').value) || 0;
   const who = slWhos.map(w => [owners.get(w.id)?.cards, w.not]).filter(([o]) => o);
   return sl.cards.filter(c => slAvail(c) > 0 && (!t || norm(`${c.name} ${c.licence}`).includes(t)) && (r === '' || c.rarity === +r) && (!l || c.licence === l)
-    && (!$('slDup').checked || c.count > 1) && !($('slPend').checked && c.pending) && who.every(([o, not]) => o.has(c.id) !== not))
+    && (!$('slDup').checked || c.count > 1) && c.count >= min && !($('slPend').checked && c.pending) && who.every(([o, not]) => o.has(c.id) !== not))
     .sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr'));
 }
 function slAdd(c, d) {
