@@ -584,12 +584,13 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
           <input type="search" id="slQ" placeholder="Rechercher une carte, une licence…" aria-label="Rechercher une carte" class="mksel">
           <select id="slRar" aria-label="Rareté" class="mksel"></select>
           <select id="slLic" aria-label="Licence" class="mksel"></select>
-          <select id="slHas" aria-label="Cartes qu'un joueur a" class="mksel" title="N'affiche que tes cartes que ce joueur possède déjà."></select>
-          <select id="slHasNot" aria-label="Cartes qu'un joueur n'a pas" class="mksel" title="N'affiche que tes cartes que ce joueur ne possède pas."></select>
+          <select id="slHas" aria-label="Cartes qu'un joueur a" class="mksel" title="N'affiche que tes cartes que ce joueur possède déjà. Plusieurs joueurs possibles : chacun s'ajoute aux filtres."></select>
+          <select id="slHasNot" aria-label="Cartes qu'un joueur n'a pas" class="mksel" title="N'affiche que tes cartes que ce joueur ne possède pas. Plusieurs joueurs possibles : chacun s'ajoute aux filtres."></select>
           <label class="xsafe"><input type="checkbox" id="slDup">Seulement mes doublons</label>
           <label class="xsafe" title="Ne propose jamais ton dernier exemplaire."><input type="checkbox" id="slKeep" checked>Garder un exemplaire</label>
           <label class="xsafe" title="Écarte les cartes que tu donnes dans un échange en attente."><input type="checkbox" id="slPend" checked>Sans les cartes en attente d'échange</label>
         </div>
+        <div class="xfilters" id="slWhoList" style="margin-bottom:8px"></div>
         <p class="xnote" id="slWho" role="status" hidden></p>
         <div id="slGrid"><p class="xnote">Chargement…</p></div>
       </div>
@@ -2140,12 +2141,13 @@ setInterval(() => { if (!$('viewMarket').hidden) loadMarket(); }, 30000);
 let sl = null, slLim = 60, slBusy = false;
 const slBasket = new Map(); // id → {qty, price, on} ; on : cochée pour les prix groupés
 const mkFee = p => p < 50 ? 0 : Math.round(p * (p <= 200 ? .05 : p <= 1000 ? .08 : .12)); // même barème que le site
+let slWhos = []; // « Que X a / n'a pas » cumulables : [{id, not}], toutes les conditions doivent tenir
 const slAvail = c => c.count - ($('slKeep').checked ? 1 : 0);
 function slList() {
   const t = norm($('slQ').value.trim()), r = $('slRar').value, l = $('slLic').value;
-  const has = owners.get($('slHas').value)?.cards, hasNot = owners.get($('slHasNot').value)?.cards;
+  const who = slWhos.map(w => [owners.get(w.id)?.cards, w.not]).filter(([o]) => o);
   return sl.cards.filter(c => slAvail(c) > 0 && (!t || norm(`${c.name} ${c.licence}`).includes(t)) && (r === '' || c.rarity === +r) && (!l || c.licence === l)
-    && (!$('slDup').checked || c.count > 1) && !($('slPend').checked && c.pending) && (!has || has.has(c.id)) && (!hasNot || !hasNot.has(c.id)))
+    && (!$('slDup').checked || c.count > 1) && !($('slPend').checked && c.pending) && who.every(([o, not]) => o.has(c.id) !== not))
     .sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr'));
 }
 function slAdd(c, d) {
@@ -2213,15 +2215,23 @@ async function loadSell() {
     slFill('slLic', [['', 'Licence : toutes'], ...[...new Set(d.cards.map(c => c.licence).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')).map(l => [l, l])]);
     slFill('slHas', [['', 'Que … a : personne'], ...d.players.map(([id, n]) => [id, `Que ${n || 'Joueur'} a`])]);
     slFill('slHasNot', [['', 'Que … n\'a pas : personne'], ...d.players.map(([id, n]) => [id, `Que ${n || 'Joueur'} n'a pas`])]);
+    slWhos = slWhos.filter(w => d.players.some(([id]) => id === w.id));
+    slWhoNote();
     paintSell();
   } catch (e) { $('slGrid').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
 }
 // « Que X a / n'a pas » : même cache des collections que l'onglet Échanges.
+// Chaque joueur choisi s'ajoute en bouton (clic : retiré) et la liste revient à « personne ».
 function slWhoNote() {
-  const s = [$('slHas').value, $('slHasNot').value].map(id => id && owners.get(id)?.state).filter(Boolean).join(' ');
+  const name = id => (sl?.players.find(([p]) => p === id) || [, ''])[1] || 'Joueur';
+  $('slWhoList').replaceChildren(...slWhos.map(w => el('button', {type: 'button', className: 'ghost', title: 'Retirer ce filtre',
+    textContent: `Que ${name(w.id)} ${w.not ? 'n\'a pas' : 'a'} ✕`, onclick: () => { slWhos = slWhos.filter(x => x !== w); slWhoNote(); paintSell(); }})));
+  const s = [...new Set(slWhos.map(w => owners.get(w.id)?.state).filter(Boolean))].join(' ');
   $('slWho').textContent = s; $('slWho').hidden = !s;
 }
-async function slWho(id) {
+async function slWho(id, not) {
+  // Un même joueur ne peut pas être à la fois « a » et « n'a pas » : le dernier choix remplace l'autre.
+  slWhos = [...slWhos.filter(w => w.id !== id), {id, not}];
   if (id && !owners.get(id)?.cards) {
     owners.set(id, {state: 'Chargement de sa collection…'});
     slWhoNote();
@@ -2233,7 +2243,7 @@ async function slWho(id) {
   slWhoNote();
   paintSell();
 }
-$('slFilters').oninput = e => { slLim = 60; if (e.target.id === 'slHas' || e.target.id === 'slHasNot') slWho(e.target.value); else paintSell(); };
+$('slFilters').oninput = e => { slLim = 60; if (e.target.id === 'slHas' || e.target.id === 'slHasNot') { const id = e.target.value; e.target.value = ''; if (id) slWho(id, e.target.id === 'slHasNot'); } else paintSell(); };
 $('slAddAll').onclick = () => { if (!sl) return; for (const c of slList()) slAdd(c, slAvail(c)); paintSell(); };
 $('slAll').onchange = () => { for (const b of slBasket.values()) b.on = $('slAll').checked; paintSlBasket(); };
 const slChecked = () => { const l = [...slBasket].filter(([, b]) => b.on); $('slMsg').textContent = l.length ? '' : 'Coche d\'abord des cartes.'; return l; };
