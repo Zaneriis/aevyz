@@ -1171,18 +1171,18 @@ function composer(d) {
     ...sendParts(give.map(c => c.id), get.map(c => c.id), d.name, warning));
 }
 // Message, avertissement et bouton d'envoi ; give et get sont des listes d'identifiants (une carte peut revenir plusieurs fois).
-function sendParts(give, get, who, warning) {
+function sendParts(give, get, who, warning, giveCoins = 0, getCoins = 0) {
   const counter = el('small', {textContent: `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`});
   const message = el('textarea', {maxLength: TRADE_MESSAGE_MAX, value: tradeMsg, placeholder: 'Message (facultatif) : Salut ! Ça te dit ?', oninput: () => { tradeMsg = message.value; counter.textContent = `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`; }});
   message.setAttribute('aria-label', 'Message à envoyer avec la proposition');
   const error = el('p', {className: 'xwarn', role: 'alert', hidden: true});
   const name = who || 'ce joueur';
-  const send = el('button', {type: 'button', className: 'btn', disabled: !(give.length && get.length), textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
-    if (!confirm(`Envoyer à ${name} : ${give.length} contre ${get.length} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
+  const send = el('button', {type: 'button', className: 'btn', disabled: !((give.length || giveCoins) && (get.length || getCoins) && give.length + get.length), textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
+    if (!confirm(`Envoyer à ${name} : ${give.length}${giveCoins ? ` + ${giveCoins.toLocaleString('fr-FR')} pièces` : ''} contre ${get.length}${getCoins ? ` + ${getCoins.toLocaleString('fr-FR')} pièces` : ''} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
     send.disabled = true;
     error.hidden = true;
     try {
-      await post('api/trades/propose', {to: tradeUser, give, get, message: tradeMsg});
+      await post('api/trades/propose', {to: tradeUser, give, get, message: tradeMsg, giveCoins, getCoins});
     } catch (e) {
       error.textContent = e.message;
       error.hidden = false;
@@ -1204,21 +1204,21 @@ function sendParts(give, get, who, warning) {
 let man = null;
 // SORT-START
 // Tri des cartes affichées (après les filtres). key : '' (rareté, licence, nom), ou [-]pop | [-]count | [-]value.
-// pop : popularité de la licence (joueurs qui l'envient, puis cartes voulues) ; have : exemplaires chez moi.
-const SORT_OPTIONS = [['', 'Tri : rareté'], ['-pop', 'Licence la plus populaire'], ['pop', 'Licence la moins populaire'], ['-count', 'Exemplaires : plus d\'abord'], ['count', 'Exemplaires : moins d\'abord'], ['-value', 'Cote : décroissante'], ['value', 'Cote : croissante']];
+// pop : popularité de la licence (nombre de joueurs qui ont des envies dans cette licence) ; have : exemplaires chez moi.
+const SORT_OPTIONS = [['', 'Rareté : décroissante'], ['rarity', 'Rareté : croissante'], ['-pop', 'Licence la plus populaire'], ['pop', 'Licence la moins populaire'], ['-count', 'Exemplaires : plus d\'abord'], ['count', 'Exemplaires : moins d\'abord'], ['-value', 'Cote : décroissante'], ['value', 'Cote : croissante']];
 function cardSorter(key, have, pop) {
   const base = (a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr');
-  const m = /^(-?)(pop|count|value)$/.exec(key || '');
+  const m = /^(-?)(pop|count|value|rarity)$/.exec(key || '');
   if (!m) return base;
   const dir = m[1] ? -1 : 1;
-  const val = c => m[2] === 'count' ? have(c) ?? 0 : m[2] === 'value' ? c.value ?? 0 : (e => e ? e.players * 1e6 + e.cards : 0)(pop && pop.get(c.licence));
+  const val = c => m[2] === 'count' ? have(c) ?? 0 : m[2] === 'value' ? c.value ?? 0 : m[2] === 'rarity' ? c.rarity ?? 0 : (pop && pop.get(c.licence)?.players) || 0;
   return (a, b) => dir * (val(a) - val(b)) || base(a, b);
 }
 // SORT-END
 let popMap = null; // licence → {players, cards}, chargé à la première demande d'un tri par popularité
 async function loadPop() {
   if (popMap) return;
-  try { envyData ??= await getJson('api/stats/licences'); popMap = new Map(envyData.licences.map(l => [l.licence, l])); } catch (e) { popMap = new Map(); }
+  try { envyData ??= await getJson('api/stats/licences'); popMap = new Map(envyData.licences.map(l => [l.licence, l])); } catch (e) { popMap = null; throw e; }
 }
 const sortSelect = (value, onchange) => {
   const s = el('select', {className: 'mksel', onchange: () => onchange(s.value)}, ...SORT_OPTIONS.map(([v, t]) => el('option', {value: v, textContent: t, selected: v === value})));
@@ -1228,7 +1228,7 @@ const sortSelect = (value, onchange) => {
 const norm = s => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 const manVal = l => l.reduce((s, id) => s + man.byId.get(id).value, 0);
 async function loadManual(seq) {
-  if (man?.user !== tradeUser) man = {user: tradeUser, give: [], get: [], tab: 'theirs', sort: '', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
+  if (man?.user !== tradeUser) man = {user: tradeUser, give: [], get: [], giveCoins: 0, getCoins: 0, tab: 'theirs', sort: '', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
   const d = await getJson(`api/trades/manual?user=${encodeURIComponent(tradeUser)}`);
   if (seq !== tradeSeq) return;
   Object.assign(man, {d, byId: new Map(d.cards.map(c => [c.id, c]))});
@@ -1310,10 +1310,27 @@ function paintManTop() {
       b.setAttribute('aria-label', `Retirer ${c.name}`);
       return b;
     }) : [el('span', {className: 'xnote', textContent: side === 'give' ? 'Choisis dans « Mes cartes ».' : `Choisis dans « ${man.d.private ? 'Cartes à demander' : 'Ses cartes'} ».`})])));
-  const ready = man.give.length && man.get.length;
+  const gc = man.giveCoins || 0, tc = man.getCoins || 0;
+  const ready = (man.give.length || gc) && (man.get.length || tc) && man.give.length + man.get.length;
+  // Les champs sont créés une seule fois : les recréer à chaque frappe ferait perdre le focus.
+  if (!man.coinRow) {
+    const ins = {}, coinInput = (key, other, label) => {
+      const i = ins[key] = el('input', {type: 'number', min: 0, max: 10000000, value: man[key] || '', className: 'mksel', style: 'width:7em', placeholder: '0', oninput: () => {
+        man[key] = Math.max(0, Math.min(1e7, Math.floor(+i.value) || 0));
+        if (man[key]) { man[other] = 0; ins[other].value = ''; }
+        paintManTop();
+      }});
+      i.setAttribute('aria-label', label);
+      return el('label', {className: 'xsafe'}, label + ' ', i);
+    };
+    man.coinRow = el('div', {className: 'xfilters'}, coinInput('giveCoins', 'getCoins', 'Pièces que tu donnes'), coinInput('getCoins', 'giveCoins', 'Pièces que tu reçois'));
+  }
+  const focused = man.coinRow.contains(document.activeElement) ? document.activeElement : null;
   $('manTop').replaceChildren(...(man.note ? [el('p', {className: 'xwarn', textContent: man.note})] : []),
-    el('div', {className: 'mtrays'}, tray('give'), tray('get')), gauge(manVal(man.give), manVal(man.get)),
-    ...sendParts(man.give, man.get, man.d.name, ready ? '' : 'Ajoute au moins une carte de chaque côté.'));
+    el('div', {className: 'mtrays'}, tray('give'), tray('get')), man.coinRow,
+    gauge(manVal(man.give) + gc, manVal(man.get) + tc),
+    ...sendParts(man.give, man.get, man.d.name, ready ? '' : 'Ajoute au moins une carte, et quelque chose (cartes ou pièces) de chaque côté.', gc, tc));
+  focused?.focus(); // replaceChildren déplace le champ : on rend le focus
 }
 function paintManChips() {
   const fl = manFilters(), pool = manPool(), on = manOn(fl);
@@ -1339,7 +1356,7 @@ function manAddAll() {
     if (man[side].length >= TRADE_MAX) { full = true; break; }
     man[side].push(c.id); added++;
   }
-  man.note = full ? `${plural(added, 'carte')} ajoutée${added > 1 ? 's' : ''} : limite de ${TRADE_MAX} cartes atteinte.` : '';
+  if (full) man.note = `${plural(added, 'carte')} ajoutée${added > 1 ? 's' : ''} : limite de ${TRADE_MAX} cartes atteinte.`;
   paintManTop(); paintManGrid();
 }
 function paintManGrid() {
@@ -1364,7 +1381,7 @@ function paintManGrid() {
 // Historique : l'inverse d'un échange accepté, prérempli dans l'échange manuel (je rends ce que j'ai reçu).
 function reverseTrade(t) {
   document.querySelector('input[name=tradeMode][value=manual]').checked = true;
-  man = {user: t.player, give: t.get.map(c => c.id), get: t.give.map(c => c.id), tab: 'theirs', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
+  man = {user: t.player, give: t.get.map(c => c.id), get: t.give.map(c => c.id), giveCoins: t.getCoins || 0, getCoins: t.giveCoins || 0, tab: 'theirs', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
   tradeMsg = '';
   location.hash = '#echanges';
   pickTrade(t.player, t.name);
@@ -1413,12 +1430,12 @@ function renderManual() {
     el('div', {className: 'mfilters'}, el('div', {className: 'mchips', id: 'manChips'}), search,
       select('Rareté', man.rar, [['', 'Rareté : toutes'], ...RARITIES.map((r, i) => [String(i), r]).reverse()], v => { man.rar = v; }),
       select('Licence', man.lic, [['', 'Licence : toutes'], ...lics.map(l => [l, l])], v => { man.lic = v; }), whoSel(false), whoSel(true), minLab,
-      sortSelect(man.sort, async v => { man.sort = v; man.lim = 60; if (v.endsWith('pop')) await loadPop(); paintManGrid(); }),
+      sortSelect(man.sort, async v => { man.sort = v; man.lim = 60; if (v.endsWith('pop')) { try { await loadPop(); } catch (e) { man.note = 'Popularité des licences indisponible : ' + e.message; paintManTop(); } } paintManGrid(); }),
       el('button', {type: 'button', className: 'ghost', textContent: 'Tout ajouter', title: 'Ajoute un exemplaire de chaque carte affichée, dans la limite de l\'échange.', onclick: manAddAll})),
     el('div', {className: 'xfilters', id: 'manWhoList'}),
     el('p', {className: 'xnote', id: 'manWho', role: 'status', hidden: true}),
     el('div', {id: 'manGrid'}),
-    el('p', {className: 'xnote', textContent: 'Les cotes du marché servent d\'estimation (prix moyen de la rareté sans cote). La surcouche n\'ajoute jamais de pièces à un échange.'}));
+    el('p', {className: 'xnote', textContent: 'Les cotes du marché servent d\'estimation (prix moyen de la rareté sans cote).'}));
   paintManTop();
   paintWho();
   paintManChips();
@@ -2298,13 +2315,13 @@ async function slWho(id, not) {
   slWhoNote();
   paintSell();
 }
-$('slFilters').oninput = async e => { slLim = 60; if (e.target.id === 'slSort' && e.target.value.endsWith('pop')) await loadPop(); if (e.target.id === 'slHas' || e.target.id === 'slHasNot') { const id = e.target.value; e.target.value = ''; if (id) slWho(id, e.target.id === 'slHasNot'); } else paintSell(); };
+$('slFilters').oninput = async e => { slLim = 60; if (e.target.id === 'slSort' && e.target.value.endsWith('pop')) try { await loadPop(); } catch (err) { $('slMsg').textContent = 'Popularité des licences indisponible : ' + err.message; } if (e.target.id === 'slHas' || e.target.id === 'slHasNot') { const id = e.target.value; e.target.value = ''; if (id) slWho(id, e.target.id === 'slHasNot'); } else paintSell(); };
 $('slAddAll').onclick = () => { // dans la limite des annonces libres
   if (!sl) return;
   let free = sl.room - [...slBasket.values()].reduce((s, b) => s + b.qty, 0), added = 0, total = 0;
   for (const c of slList()) {
-    const n = Math.min(slAvail(c) - (slBasket.get(c.id)?.qty || 0), free);
-    total += slAvail(c) - (slBasket.get(c.id)?.qty || 0);
+    const miss = (slBasket.get(c.id)?.qty || 0) < 1 ? 1 : 0, n = Math.min(miss, free);
+    total += miss;
     if (n > 0) { slAdd(c, n); free -= n; added += n; }
   }
   $('slMsg').textContent = total > added ? `${plural(added, 'annonce')} ajoutée${added > 1 ? 's' : ''} sur ${total} : limite d'annonces atteinte (${sl.room}).` : '';

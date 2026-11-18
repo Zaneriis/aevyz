@@ -377,8 +377,19 @@ const start = async () => {
   assert.strictEqual(refused.status, 500);
   assert.strictEqual((await refused.json()).error, 'Carte déjà engagée', 'le refus du site est affiché tel quel');
   delete game.tradeRefusal;
-  assert.strictEqual((await post('/api/trades/propose', { ...proposal, p_give_coins: 500 })).status, 200);
-  assert.deepStrictEqual(game.tradeProposal, { p_to: 'lui', p_give: ['ac0'], p_get: ['bc0'], p_give_coins: 0, p_get_coins: 0, p_message: 'Salut !' }, 'jamais de pièces');
+  assert.strictEqual((await post('/api/trades/propose', { ...proposal })).status, 200);
+  assert.deepStrictEqual(game.tradeProposal, { p_to: 'lui', p_give: ['ac0'], p_get: ['bc0'], p_give_coins: 0, p_get_coins: 0, p_message: 'Salut !' }, 'sans pièces par défaut');
+  // Pièces : un seul côté, entières, dans le solde (500 dans le mock).
+  game.tradeProposal = null;
+  for (const bad of [{ giveCoins: 5, getCoins: 5 }, { giveCoins: -1 }, { getCoins: 1.5 }, { giveCoins: '3' }, { giveCoins: 501 }, { give: [] }, { give: [], get: [] , giveCoins: 5 }])
+    assert.strictEqual((await post('/api/trades/propose', { ...proposal, ...bad })).status, 400, JSON.stringify(bad));
+  assert.strictEqual(game.tradeProposal, null, 'pièces invalides jamais transmises');
+  assert.strictEqual((await post('/api/trades/propose', { ...proposal, giveCoins: 200 })).status, 200);
+  assert.strictEqual(game.tradeProposal.p_give_coins, 200);
+  assert.strictEqual((await post('/api/trades/propose', { ...proposal, getCoins: 300 })).status, 200);
+  assert.deepStrictEqual([game.tradeProposal.p_give_coins, game.tradeProposal.p_get_coins], [0, 300]);
+  assert.strictEqual((await post('/api/trades/propose', { ...proposal, give: [], giveCoins: 50 })).status, 200, 'pièces contre cartes');
+  assert.deepStrictEqual([game.tradeProposal.p_give, game.tradeProposal.p_give_coins], [[], 50]);
   assert.strictEqual((await post('/api/trades/propose', { ...proposal, give: ['ac0', 'ac0'] })).status, 200, 'deux exemplaires de la même carte');
   assert.deepStrictEqual(game.tradeProposal.p_give, ['ac0', 'ac0']);
   const beforeResend = game.tradeReads;

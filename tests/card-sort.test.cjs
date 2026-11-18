@@ -15,10 +15,11 @@ const cards = [
   { id: 'b', name: 'B', licence: 'Y', rarity: 2, value: 50, n: 1 },
   { id: 'c', name: 'C', licence: 'Z', rarity: 0, value: 30, n: 2 },
 ];
-const pop = new Map([['X', { players: 1, cards: 5 }], ['Y', { players: 4, cards: 4 }]]);
-const ids = key => cards.slice().sort(cardSorter(key, c => c.n, pop)).map(c => c.id).join('');
+const pop = new Map([['X', { players: 1, cards: 5 }], ['Y', { players: 4, cards: 0 }]]);
+pop.get('X').players = 1; const ids = key => cards.slice().sort(cardSorter(key, c => c.n, pop)).map(c => c.id).join('');
 
 test('tri par défaut : rareté décroissante', () => assert.equal(ids(''), 'bac'));
 test('tri par cote', () => { assert.equal(ids('value'), 'acb'); assert.equal(ids('-value'), 'bca'); });
 test('tri par exemplaires', () => { assert.equal(ids('count'), 'bca'); assert.equal(ids('-count'), 'acb'); });
 test('tri par popularité de la licence (inconnue = 0)', () => { assert.equal(ids('-pop'), 'bac'); assert.equal(ids('pop'), 'cab'); });
+test('tri par rareté croissante', () => assert.equal(ids('rarity'), 'cab'));
