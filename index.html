@@ -1177,7 +1177,7 @@ function sendParts(give, get, who, warning, giveCoins = 0, getCoins = 0) {
   const error = el('p', {className: 'xwarn', role: 'alert', hidden: true});
   const name = who || 'ce joueur';
   const send = el('button', {type: 'button', className: 'btn', disabled: !((give.length || giveCoins) && (get.length || getCoins) && give.length + get.length), textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
-    if (!confirm(`Envoyer à ${name} : ${give.length}${giveCoins ? ` + ${giveCoins} pièces` : ''} contre ${get.length}${getCoins ? ` + ${getCoins} pièces` : ''} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
+    if (!confirm(`Envoyer à ${name} : ${give.length}${giveCoins ? ` + ${giveCoins.toLocaleString('fr-FR')} pièces` : ''} contre ${get.length}${getCoins ? ` + ${getCoins.toLocaleString('fr-FR')} pièces` : ''} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
     send.disabled = true;
     error.hidden = true;
     try {
@@ -1288,19 +1288,25 @@ function paintManTop() {
     }) : [el('span', {className: 'xnote', textContent: side === 'give' ? 'Choisis dans « Mes cartes ».' : `Choisis dans « ${man.d.private ? 'Cartes à demander' : 'Ses cartes'} ».`})])));
   const gc = man.giveCoins || 0, tc = man.getCoins || 0;
   const ready = (man.give.length || gc) && (man.get.length || tc) && man.give.length + man.get.length;
-  const coinInput = (key, other, label) => {
-    const i = el('input', {type: 'number', min: 0, max: 10000000, value: man[key] || '', className: 'mksel', style: 'width:7em', placeholder: '0', oninput: () => {
-      man[key] = Math.max(0, Math.min(1e7, Math.floor(+i.value) || 0));
-      if (man[key]) man[other] = 0;
-      paintManTop();
-    }});
-    i.setAttribute('aria-label', label);
-    return el('label', {className: 'xsafe'}, label + ' ', i);
-  };
+  // Les champs sont créés une seule fois : les recréer à chaque frappe ferait perdre le focus.
+  if (!man.coinRow) {
+    const ins = {}, coinInput = (key, other, label) => {
+      const i = ins[key] = el('input', {type: 'number', min: 0, max: 10000000, value: man[key] || '', className: 'mksel', style: 'width:7em', placeholder: '0', oninput: () => {
+        man[key] = Math.max(0, Math.min(1e7, Math.floor(+i.value) || 0));
+        if (man[key]) { man[other] = 0; ins[other].value = ''; }
+        paintManTop();
+      }});
+      i.setAttribute('aria-label', label);
+      return el('label', {className: 'xsafe'}, label + ' ', i);
+    };
+    man.coinRow = el('div', {className: 'xfilters'}, coinInput('giveCoins', 'getCoins', 'Pièces que tu donnes'), coinInput('getCoins', 'giveCoins', 'Pièces que tu reçois'));
+  }
+  const focused = man.coinRow.contains(document.activeElement) ? document.activeElement : null;
   $('manTop').replaceChildren(...(man.note ? [el('p', {className: 'xwarn', textContent: man.note})] : []),
-    el('div', {className: 'mtrays'}, tray('give'), tray('get')), el('div', {className: 'xfilters'}, coinInput('giveCoins', 'getCoins', 'Pièces que tu donnes'), coinInput('getCoins', 'giveCoins', 'Pièces que tu reçois')),
+    el('div', {className: 'mtrays'}, tray('give'), tray('get')), man.coinRow,
     gauge(manVal(man.give) + gc, manVal(man.get) + tc),
     ...sendParts(man.give, man.get, man.d.name, ready ? '' : 'Ajoute au moins une carte, et quelque chose (cartes ou pièces) de chaque côté.', gc, tc));
+  focused?.focus(); // replaceChildren déplace le champ : on rend le focus
 }
 function paintManChips() {
   const fl = manFilters(), pool = manPool(), on = manOn(fl);
