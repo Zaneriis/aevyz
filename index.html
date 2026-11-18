@@ -584,6 +584,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
           <input type="search" id="slQ" placeholder="Rechercher une carte, une licence…" aria-label="Rechercher une carte" class="mksel">
           <select id="slRar" aria-label="Rareté" class="mksel"></select>
           <select id="slLic" aria-label="Licence" class="mksel"></select>
+          <select id="slSort" aria-label="Trier les cartes" class="mksel"></select>
           <select id="slHas" aria-label="Cartes qu'un joueur a" class="mksel" title="N'affiche que tes cartes que ce joueur possède déjà. Plusieurs joueurs possibles : chacun s'ajoute aux filtres."></select>
           <select id="slHasNot" aria-label="Cartes qu'un joueur n'a pas" class="mksel" title="N'affiche que tes cartes que ce joueur ne possède pas. Plusieurs joueurs possibles : chacun s'ajoute aux filtres."></select>
           <label class="xsafe"><input type="checkbox" id="slDup">Seulement mes doublons</label>
@@ -1201,10 +1202,33 @@ function sendParts(give, get, who, warning) {
 }
 // ---- Échange manuel : je choisis les cartes des deux côtés, avec les filtres et la jauge de valeur du site ----
 let man = null;
+// SORT-START
+// Tri des cartes affichées (après les filtres). key : '' (rareté, licence, nom), ou [-]pop | [-]count | [-]value.
+// pop : popularité de la licence (joueurs qui l'envient, puis cartes voulues) ; have : exemplaires chez moi.
+const SORT_OPTIONS = [['', 'Tri : rareté'], ['-pop', 'Licence la plus populaire'], ['pop', 'Licence la moins populaire'], ['-count', 'Exemplaires : plus d\'abord'], ['count', 'Exemplaires : moins d\'abord'], ['-value', 'Cote : décroissante'], ['value', 'Cote : croissante']];
+function cardSorter(key, have, pop) {
+  const base = (a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr');
+  const m = /^(-?)(pop|count|value)$/.exec(key || '');
+  if (!m) return base;
+  const dir = m[1] ? -1 : 1;
+  const val = c => m[2] === 'count' ? have(c) ?? 0 : m[2] === 'value' ? c.value ?? 0 : (e => e ? e.players * 1e6 + e.cards : 0)(pop && pop.get(c.licence));
+  return (a, b) => dir * (val(a) - val(b)) || base(a, b);
+}
+// SORT-END
+let popMap = null; // licence → {players, cards}, chargé à la première demande d'un tri par popularité
+async function loadPop() {
+  if (popMap) return;
+  try { envyData ??= await getJson('api/stats/licences'); popMap = new Map(envyData.licences.map(l => [l.licence, l])); } catch (e) { popMap = new Map(); }
+}
+const sortSelect = (value, onchange) => {
+  const s = el('select', {className: 'mksel', onchange: () => onchange(s.value)}, ...SORT_OPTIONS.map(([v, t]) => el('option', {value: v, textContent: t, selected: v === value})));
+  s.setAttribute('aria-label', 'Trier les cartes');
+  return s;
+};
 const norm = s => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 const manVal = l => l.reduce((s, id) => s + man.byId.get(id).value, 0);
 async function loadManual(seq) {
-  if (man?.user !== tradeUser) man = {user: tradeUser, give: [], get: [], tab: 'theirs', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
+  if (man?.user !== tradeUser) man = {user: tradeUser, give: [], get: [], tab: 'theirs', sort: '', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
   const d = await getJson(`api/trades/manual?user=${encodeURIComponent(tradeUser)}`);
   if (seq !== tradeSeq) return;
   Object.assign(man, {d, byId: new Map(d.cards.map(c => [c.id, c]))});
@@ -1266,7 +1290,7 @@ const manOn = fl => { const s = fl.filter(x => man.f.includes(x[0]) && x[0] !== 
 function manList() {
   const on = manOn(manFilters()), t = norm(man.q.trim());
   return manPool().filter(c => on.every(f => f[2](c)) && (!t || norm(`${c.name} ${c.licence}`).includes(t)) && (man.rar === '' || c.rarity === +man.rar) && (!man.lic || c.licence === man.lic))
-    .sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr'));
+    .sort(cardSorter(man.sort, c => man.tab === 'mine' ? c.mine : c.theirs ?? 9, popMap));
 }
 // Jauge du site : valeur = cote du marché, sinon prix moyen de la rareté ; équilibré à 6 % près (5 pièces au moins).
 function gauge(a, b) {
@@ -1305,6 +1329,18 @@ function paintManChips() {
     b.setAttribute('aria-pressed', on.includes(x));
     return b;
   }));
+}
+function manAddAll() {
+  const side = man.tab === 'mine' ? 'give' : 'get';
+  let added = 0, full = false;
+  for (const c of manList()) {
+    const have = man.tab === 'mine' ? c.mine : c.theirs ?? 9;
+    if (have - man[side].filter(x => x === c.id).length <= 0) continue;
+    if (man[side].length >= TRADE_MAX) { full = true; break; }
+    man[side].push(c.id); added++;
+  }
+  man.note = full ? `${plural(added, 'carte')} ajoutée${added > 1 ? 's' : ''} : limite de ${TRADE_MAX} cartes atteinte.` : '';
+  paintManTop(); paintManGrid();
 }
 function paintManGrid() {
   const list = manList(), side = man.tab === 'mine' ? 'give' : 'get', who = man.d.name || 'ce joueur';
@@ -1376,7 +1412,9 @@ function renderManual() {
     ...(d.private && man.tab === 'theirs' ? [el('p', {className: 'xnote', textContent: 'Sa collection est privée : tu peux quand même demander n\'importe quelle carte du catalogue.'})] : []),
     el('div', {className: 'mfilters'}, el('div', {className: 'mchips', id: 'manChips'}), search,
       select('Rareté', man.rar, [['', 'Rareté : toutes'], ...RARITIES.map((r, i) => [String(i), r]).reverse()], v => { man.rar = v; }),
-      select('Licence', man.lic, [['', 'Licence : toutes'], ...lics.map(l => [l, l])], v => { man.lic = v; }), whoSel(false), whoSel(true), minLab),
+      select('Licence', man.lic, [['', 'Licence : toutes'], ...lics.map(l => [l, l])], v => { man.lic = v; }), whoSel(false), whoSel(true), minLab,
+      sortSelect(man.sort, async v => { man.sort = v; man.lim = 60; if (v.endsWith('pop')) await loadPop(); paintManGrid(); }),
+      el('button', {type: 'button', className: 'ghost', textContent: 'Tout ajouter', title: 'Ajoute un exemplaire de chaque carte affichée, dans la limite de l\'échange.', onclick: manAddAll})),
     el('div', {className: 'xfilters', id: 'manWhoList'}),
     el('p', {className: 'xnote', id: 'manWho', role: 'status', hidden: true}),
     el('div', {id: 'manGrid'}),
@@ -2164,7 +2202,7 @@ function slList() {
   const who = slWhos.map(w => [owners.get(w.id)?.cards, w.not]).filter(([o]) => o);
   return sl.cards.filter(c => slAvail(c) > 0 && (!t || norm(`${c.name} ${c.licence}`).includes(t)) && (r === '' || c.rarity === +r) && (!l || c.licence === l)
     && (!$('slDup').checked || c.count > 1) && c.count >= min && !($('slPend').checked && c.pending) && who.every(([o, not]) => o.has(c.id) !== not))
-    .sort((a, b) => (b.rarity ?? 0) - (a.rarity ?? 0) || (a.licence || '').localeCompare(b.licence || '', 'fr') || (a.name || '').localeCompare(b.name || '', 'fr'));
+    .sort(cardSorter($('slSort').value, c => c.count, popMap));
 }
 function slAdd(c, d) {
   const b = slBasket.get(c.id) || {qty: 0, price: c.value, on: false};
@@ -2227,6 +2265,7 @@ async function loadSell() {
   try {
     const d = await getJson('api/market/sellable');
     sl = {...d, byId: new Map(d.cards.map(c => [c.id, c]))};
+    slFill('slSort', SORT_OPTIONS);
     slFill('slRar', [['', 'Rareté : toutes'], ...RARITIES.map((r, i) => [String(i), r]).reverse()]);
     slFill('slLic', [['', 'Licence : toutes'], ...[...new Set(d.cards.map(c => c.licence).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')).map(l => [l, l])]);
     slFill('slHas', [['', 'Que … a : personne'], ...d.players.map(([id, n]) => [id, `Que ${n || 'Joueur'} a`])]);
@@ -2259,8 +2298,18 @@ async function slWho(id, not) {
   slWhoNote();
   paintSell();
 }
-$('slFilters').oninput = e => { slLim = 60; if (e.target.id === 'slHas' || e.target.id === 'slHasNot') { const id = e.target.value; e.target.value = ''; if (id) slWho(id, e.target.id === 'slHasNot'); } else paintSell(); };
-$('slAddAll').onclick = () => { if (!sl) return; for (const c of slList()) slAdd(c, slAvail(c)); paintSell(); };
+$('slFilters').oninput = async e => { slLim = 60; if (e.target.id === 'slSort' && e.target.value.endsWith('pop')) await loadPop(); if (e.target.id === 'slHas' || e.target.id === 'slHasNot') { const id = e.target.value; e.target.value = ''; if (id) slWho(id, e.target.id === 'slHasNot'); } else paintSell(); };
+$('slAddAll').onclick = () => { // dans la limite des annonces libres
+  if (!sl) return;
+  let free = sl.room - [...slBasket.values()].reduce((s, b) => s + b.qty, 0), added = 0, total = 0;
+  for (const c of slList()) {
+    const n = Math.min(slAvail(c) - (slBasket.get(c.id)?.qty || 0), free);
+    total += slAvail(c) - (slBasket.get(c.id)?.qty || 0);
+    if (n > 0) { slAdd(c, n); free -= n; added += n; }
+  }
+  $('slMsg').textContent = total > added ? `${plural(added, 'annonce')} ajoutée${added > 1 ? 's' : ''} sur ${total} : limite d'annonces atteinte (${sl.room}).` : '';
+  paintSell();
+};
 $('slAll').onchange = () => { for (const b of slBasket.values()) b.on = $('slAll').checked; paintSlBasket(); };
 const slChecked = () => { const l = [...slBasket].filter(([, b]) => b.on); $('slMsg').textContent = l.length ? '' : 'Coche d\'abord des cartes.'; return l; };
 $('slPxGo').onclick = () => {
