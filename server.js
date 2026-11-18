@@ -24,6 +24,7 @@ const SNEAKY_UNIT_MS = +process.env.SNEAKY_UNIT_MS || 60000; // réduit par test
 const VISIT_SYNC_MS = 15000;
 // Échanges : [mes doublons requis, ses doublons requis, ignorer les envies]. Une proposition ne part que sur demande de la page.
 const TRADE_MODES = { classic: [false, false, false], mine: [true, false, false], both: [true, true, false], dupes: [true, true, true] };
+const TRADE_COINS_MAX = 10_000_000;
 const TRADE_MAX = 20; // limite par côté de la fenêtre d'échange du site
 const TRADE_MESSAGE_MAX = 280; // limite du message sur le site
 const PLAYERS_CACHE_MS = 10 * 60000, TRADE_CACHE_MS = 60000, BADGE_CACHE_MS = 6 * 3600e3;
@@ -684,16 +685,25 @@ async function manualTrade(user) {
   }
   return { private: !!theirs?.private, name: theirs?.username, cards };
 }
-async function proposeTrade({ to, give, get, message = '' }) {
+async function proposeTrade({ to, give, get, message = '', giveCoins = 0, getCoins = 0 }) {
   // Une même carte peut revenir plusieurs fois (plusieurs exemplaires), comme sur le site, qui vérifie les exemplaires.
-  const validCards = l => Array.isArray(l) && l.length >= 1 && l.length <= TRADE_MAX && l.every(id => typeof id === 'string' && id);
-  if (typeof to !== 'string' || !to || !validCards(give) || !validCards(get)) return [400, { error: `Il faut de 1 à ${TRADE_MAX} cartes de chaque côté.` }];
+  const validCards = l => Array.isArray(l) && l.length <= TRADE_MAX && l.every(id => typeof id === 'string' && id);
+  const validCoins = n => Number.isInteger(n) && n >= 0 && n <= TRADE_COINS_MAX;
+  if (typeof to !== 'string' || !to || !validCards(give) || !validCards(get)) return [400, { error: `De 0 à ${TRADE_MAX} cartes de chaque côté.` }];
+  if (!validCoins(giveCoins) || !validCoins(getCoins)) return [400, { error: `Les pièces sont un nombre entier de 0 à ${TRADE_COINS_MAX}.` }];
+  if (giveCoins > 0 && getCoins > 0) return [400, { error: 'Des pièces d\'un seul côté : donne ou reçois des pièces, pas les deux.' }];
+  // Chaque côté apporte des cartes ou des pièces, et il faut au moins une carte dans l'échange.
+  if ((!give.length && !giveCoins) || (!get.length && !getCoins) || !(give.length + get.length)) return [400, { error: 'Chaque côté doit avoir des cartes ou des pièces, avec au moins une carte dans l\'échange.' }];
   if (typeof message !== 'string' || message.trim().length > TRADE_MESSAGE_MAX) return [400, { error: `Message limité à ${TRADE_MESSAGE_MAX} caractères.` }];
-  // Les pièces restent toujours à zéro : la surcouche n'en dépense jamais.
-  const id = await sb('/rest/v1/rpc/trade_propose', { method: 'POST', body: { p_to: to, p_give: give, p_get: get, p_give_coins: 0, p_get_coins: 0, p_message: message.trim() } });
+  if (giveCoins > 0) {
+    const { coins } = await profile();
+    if (coins < giveCoins) return [400, { error: `Pas assez de pièces : tu en as ${coins}.` }];
+  }
+  // Les pièces ne sont engagées que sur demande explicite de l'envoi (jamais par une routine).
+  const id = await sb('/rest/v1/rpc/trade_propose', { method: 'POST', body: { p_to: to, p_give: give, p_get: get, p_give_coins: giveCoins, p_get_coins: getCoins, p_message: message.trim() } });
   mineCache = null;
   theirsCache.delete(to);
-  log(`Proposition d'échange envoyée : ${give.length} contre ${get.length}`);
+  log(`Proposition d'échange envoyée : ${give.length} carte(s)${giveCoins ? ` + ${giveCoins} pièces` : ''} contre ${get.length} carte(s)${getCoins ? ` + ${getCoins} pièces` : ''}`);
   return [200, { ok: true, id }];
 }
 // ---- Échanges en attente : vus de mon côté (je donne / je reçois), avec mes exemplaires de chaque carte ----

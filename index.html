@@ -1170,18 +1170,18 @@ function composer(d) {
     ...sendParts(give.map(c => c.id), get.map(c => c.id), d.name, warning));
 }
 // Message, avertissement et bouton d'envoi ; give et get sont des listes d'identifiants (une carte peut revenir plusieurs fois).
-function sendParts(give, get, who, warning) {
+function sendParts(give, get, who, warning, giveCoins = 0, getCoins = 0) {
   const counter = el('small', {textContent: `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`});
   const message = el('textarea', {maxLength: TRADE_MESSAGE_MAX, value: tradeMsg, placeholder: 'Message (facultatif) : Salut ! Ça te dit ?', oninput: () => { tradeMsg = message.value; counter.textContent = `${tradeMsg.length}/${TRADE_MESSAGE_MAX}`; }});
   message.setAttribute('aria-label', 'Message à envoyer avec la proposition');
   const error = el('p', {className: 'xwarn', role: 'alert', hidden: true});
   const name = who || 'ce joueur';
-  const send = el('button', {type: 'button', className: 'btn', disabled: !(give.length && get.length), textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
-    if (!confirm(`Envoyer à ${name} : ${give.length} contre ${get.length} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
+  const send = el('button', {type: 'button', className: 'btn', disabled: !((give.length || giveCoins) && (get.length || getCoins) && give.length + get.length), textContent: `Envoyer la proposition à ${name}`, onclick: async () => {
+    if (!confirm(`Envoyer à ${name} : ${give.length}${giveCoins ? ` + ${giveCoins} pièces` : ''} contre ${get.length}${getCoins ? ` + ${getCoins} pièces` : ''} ?\nD'après le site, les cartes données quittent ta collection dès l'envoi.`)) return;
     send.disabled = true;
     error.hidden = true;
     try {
-      await post('api/trades/propose', {to: tradeUser, give, get, message: tradeMsg});
+      await post('api/trades/propose', {to: tradeUser, give, get, message: tradeMsg, giveCoins, getCoins});
     } catch (e) {
       error.textContent = e.message;
       error.hidden = false;
@@ -1204,7 +1204,7 @@ let man = null;
 const norm = s => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 const manVal = l => l.reduce((s, id) => s + man.byId.get(id).value, 0);
 async function loadManual(seq) {
-  if (man?.user !== tradeUser) man = {user: tradeUser, give: [], get: [], tab: 'theirs', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
+  if (man?.user !== tradeUser) man = {user: tradeUser, give: [], get: [], giveCoins: 0, getCoins: 0, tab: 'theirs', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
   const d = await getJson(`api/trades/manual?user=${encodeURIComponent(tradeUser)}`);
   if (seq !== tradeSeq) return;
   Object.assign(man, {d, byId: new Map(d.cards.map(c => [c.id, c]))});
@@ -1286,10 +1286,21 @@ function paintManTop() {
       b.setAttribute('aria-label', `Retirer ${c.name}`);
       return b;
     }) : [el('span', {className: 'xnote', textContent: side === 'give' ? 'Choisis dans « Mes cartes ».' : `Choisis dans « ${man.d.private ? 'Cartes à demander' : 'Ses cartes'} ».`})])));
-  const ready = man.give.length && man.get.length;
+  const gc = man.giveCoins || 0, tc = man.getCoins || 0;
+  const ready = (man.give.length || gc) && (man.get.length || tc) && man.give.length + man.get.length;
+  const coinInput = (key, other, label) => {
+    const i = el('input', {type: 'number', min: 0, max: 10000000, value: man[key] || '', className: 'mksel', style: 'width:7em', placeholder: '0', oninput: () => {
+      man[key] = Math.max(0, Math.min(1e7, Math.floor(+i.value) || 0));
+      if (man[key]) man[other] = 0;
+      paintManTop();
+    }});
+    i.setAttribute('aria-label', label);
+    return el('label', {className: 'xsafe'}, label + ' ', i);
+  };
   $('manTop').replaceChildren(...(man.note ? [el('p', {className: 'xwarn', textContent: man.note})] : []),
-    el('div', {className: 'mtrays'}, tray('give'), tray('get')), gauge(manVal(man.give), manVal(man.get)),
-    ...sendParts(man.give, man.get, man.d.name, ready ? '' : 'Ajoute au moins une carte de chaque côté.'));
+    el('div', {className: 'mtrays'}, tray('give'), tray('get')), el('div', {className: 'xfilters'}, coinInput('giveCoins', 'getCoins', 'Pièces que tu donnes'), coinInput('getCoins', 'giveCoins', 'Pièces que tu reçois')),
+    gauge(manVal(man.give) + gc, manVal(man.get) + tc),
+    ...sendParts(man.give, man.get, man.d.name, ready ? '' : 'Ajoute au moins une carte, et quelque chose (cartes ou pièces) de chaque côté.', gc, tc));
 }
 function paintManChips() {
   const fl = manFilters(), pool = manPool(), on = manOn(fl);
@@ -1328,7 +1339,7 @@ function paintManGrid() {
 // Historique : l'inverse d'un échange accepté, prérempli dans l'échange manuel (je rends ce que j'ai reçu).
 function reverseTrade(t) {
   document.querySelector('input[name=tradeMode][value=manual]').checked = true;
-  man = {user: t.player, give: t.get.map(c => c.id), get: t.give.map(c => c.id), tab: 'theirs', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
+  man = {user: t.player, give: t.get.map(c => c.id), get: t.give.map(c => c.id), giveCoins: t.getCoins || 0, getCoins: t.giveCoins || 0, tab: 'theirs', f: null, q: '', rar: '', lic: '', whos: [], min: '', lim: 60};
   tradeMsg = '';
   location.hash = '#echanges';
   pickTrade(t.player, t.name);
@@ -1380,7 +1391,7 @@ function renderManual() {
     el('div', {className: 'xfilters', id: 'manWhoList'}),
     el('p', {className: 'xnote', id: 'manWho', role: 'status', hidden: true}),
     el('div', {id: 'manGrid'}),
-    el('p', {className: 'xnote', textContent: 'Les cotes du marché servent d\'estimation (prix moyen de la rareté sans cote). La surcouche n\'ajoute jamais de pièces à un échange.'}));
+    el('p', {className: 'xnote', textContent: 'Les cotes du marché servent d\'estimation (prix moyen de la rareté sans cote).'}));
   paintManTop();
   paintWho();
   paintManChips();
