@@ -6,8 +6,8 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance;', ctx);
-const { boostPlan, boostBalance } = ctx;
+vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance; this.boostOutGain = boostOutGain; this.boostCoveredGain = boostCoveredGain;', ctx);
+const { boostPlan, boostBalance, boostOutGain, boostCoveredGain } = ctx;
 
 const mk = (licence, rarity, n) => Array.from({ length: n }, (_, i) => ({ id: `${licence}${rarity}-${i}`, name: 'x', licence, rarity }));
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -66,4 +66,12 @@ test('bilan : cartes chez lui, en attente et retours possibles', () => {
   assert.equal(b.pendingOut, 1);
   assert.deepEqual(plain(b.backable.map(r => r.id)), [1, 8]);
   assert.deepEqual(plain([...b.covered].sort()), ['a', 'b', 'c', 'd', 'f', 'g']);
+});
+
+test('or espéré : barème par rareté, groupes complets seulement', () => {
+  const coins = [10, 15, 25, 40, 75];
+  assert.equal(boostOutGain([{ rarity: 0, n: 4, total: 4 }, { rarity: 4, n: 2, total: 2 }, { rarity: 1, n: 5, total: 9 }, { rarity: 5, n: 1, total: 1 }], coins), 85);
+  const cat = [...mk('A', 0, 3), ...mk('B', 2, 2)];
+  assert.equal(boostCoveredGain(cat, new Set(cat.map(c => c.id)), coins), 35);
+  assert.equal(boostCoveredGain(cat, new Set(['A0-0', 'A0-1', 'B2-0', 'B2-1']), coins), 25);
 });

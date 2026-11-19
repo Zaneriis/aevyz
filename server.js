@@ -807,7 +807,34 @@ function boostBalance(rows) {
   }
   return { covered, atHim, pendingOut, backable };
 }
+// Or espéré : montant fixe par groupe (licence × rareté) complet, une seule fois. Rareté hors barème (Mythique) : 0.
+const BOOST_GOLD_DEFAULT = [10, 15, 25, 40, 75];
+const boostGold = (coins, rarity) => (Number.isFinite(coins?.[rarity]) ? coins[rarity] : 0);
+// Groupes d'un envoi tenus en entier (n === total) : seuls ceux-là rapportent à coup sûr avec cet échange.
+const boostOutGain = (groups, coins) => groups.reduce((s, g) => s + (g.n === g.total ? boostGold(coins, g.rarity) : 0), 0);
+// Groupes entièrement couverts par des envois (en cours ou acceptés) : l'or attendu une fois tout accepté.
+function boostCoveredGain(catalog, covered, coins) {
+  const groups = new Map();
+  for (const c of catalog) {
+    if (c.rarity == null || c.rarity > 5 || !c.licence) continue;
+    const k = c.licence + '\0' + c.rarity;
+    if (!groups.has(k)) groups.set(k, { rarity: c.rarity, all: true });
+    if (!covered.has(c.id)) groups.get(k).all = false;
+  }
+  let s = 0;
+  for (const g of groups.values()) if (g.all) s += boostGold(coins, g.rarity);
+  return s;
+}
 // BOOST-END
+let goldCache = { at: 0, coins: BOOST_GOLD_DEFAULT, enabled: null };
+async function boostCoins() { // barème du site, mis en cache 10 min ; repli sur les valeurs par défaut
+  if (Date.now() - goldCache.at < 600000) return goldCache;
+  try {
+    const d = await sb('/rest/v1/rpc/lic_rar_state', { method: 'POST', body: {} });
+    goldCache = { at: Date.now(), coins: Array.isArray(d?.coins) && d.coins.length ? d.coins.map(Number) : BOOST_GOLD_DEFAULT, enabled: d?.enabled ?? null };
+  } catch { goldCache = { at: Date.now() - 540000, coins: goldCache.coins, enabled: goldCache.enabled }; }
+  return goldCache;
+}
 // Un groupe découpé en plusieurs échanges ne touche le bonus que complet : on ne rend un morceau que si tout son groupe est accepté.
 function boostReturnable(bal, rows, catalog) {
   const accepted = new Set(rows.filter(r => r.dir === 'out' && r.status === 'acceptee').flatMap(r => r.cards));
@@ -837,7 +864,7 @@ async function boostState(user, fresh = false) {
   if (fresh) mineCache = null;
   const { owned, outgoing, trades } = await mineData();
   boostSync(user, trades);
-  const rows = boostRows(user), bal = boostBalance(rows), catalog = catalogMap();
+  const rows = boostRows(user), bal = boostBalance(rows), catalog = catalogMap(), gold = await boostCoins();
   const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
   const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
   const ready = boostReturnable(bal, rows, catalog), backs = ready.slice(0, slots);
@@ -847,7 +874,8 @@ async function boostState(user, fresh = false) {
   const card = id => ({ id, ...catalog.get(id) });
   const p = db.prepare('SELECT name, avatar FROM players WHERE id = ?').get(user);
   return { user, name: p?.name || null, avatar: p?.avatar || null, cap, atHim: bal.atHim, pendingOut: bal.pendingOut, room, slots, coin: BOOST_COIN,
-    outs: plan.outs.map(o => ({ groups: o.groups, cards: o.cards.map(c => card(c.id)) })), skipped: plan.skipped, groups: plan.groups, left: plan.left,
+    gold: { enabled: gold.enabled, pending: boostCoveredGain([...catalog.values()], bal.covered, gold.coins), planned: boostCoveredGain([...catalog.values()], new Set([...bal.covered, ...plan.outs.flatMap(o => o.cards.map(c => c.id))]), gold.coins) },
+    outs: plan.outs.map(o => ({ gain: boostOutGain(o.groups, gold.coins), groups: o.groups, cards: o.cards.map(c => card(c.id)) })), skipped: plan.skipped, groups: plan.groups, left: plan.left,
     backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: ready.length, heldBacks: held,
     history: rows.slice().reverse().map(r => ({ id: r.id, dir: r.dir, status: r.status, error: r.error, created_at: r.created_at, closed_at: r.closed_at, parent: r.parent, cards: r.cards.map(card) })) };
 }
