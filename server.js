@@ -64,6 +64,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS rar_snaps (player TEXT NOT NULL, at INTEGER NOT NULL, counts TEXT NOT NULL, PRIMARY KEY (player, at));
 `);
 try { db.exec('ALTER TABLE players ADD COLUMN dupes TEXT'); } catch {} // bases d'avant les doublons par rareté
+try { db.exec('ALTER TABLE cards ADD COLUMN active INTEGER'); } catch {} // 0 = carte retirée du jeu, NULL = inconnu (comptée)
 try { db.exec('ALTER TABLE players ADD COLUMN cards TEXT'); } catch {} // ids des cartes possédées, pour l'onglet Manques
 const kvGet = k => { const r = db.prepare('SELECT value FROM kv WHERE key = ?').get(k); return r ? JSON.parse(r.value) : null; };
 const kvSet = (k, v) => db.prepare('INSERT INTO kv VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(k, JSON.stringify(v));
@@ -204,20 +205,21 @@ function tx(fn) {
 async function syncCatalog() {
   const { url } = await config();
   const [cards, artRows, alts] = await Promise.all([
-    selectAll('cards', 'id,name,licence,rarity'),
+    selectAll('cards', 'id,name,licence,rarity,active'),
     selectAll('card_art', 'card_id,path', 'card_id'),
     selectAll('alt_cards', 'id,base_card,style,poster_path'),
   ]);
   const pub = p => p ? `${url}/storage/v1/object/public/cartes/${p.split('/').map(encodeURIComponent).join('/')}` : null;
   const art = new Map(artRows.map(r => [r.card_id, pub(r.path)])), byId = new Map(cards.map(c => [c.id, c]));
   // Pas de suppression : une carte retirée du jeu reste lisible dans l'historique.
-  const up = db.prepare(`INSERT INTO cards VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET
-    name = excluded.name, licence = excluded.licence, rarity = excluded.rarity, art = COALESCE(excluded.art, art)`);
+  const up = db.prepare(`INSERT INTO cards (id, name, licence, rarity, art, active) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET
+    name = excluded.name, licence = excluded.licence, rarity = excluded.rarity, art = COALESCE(excluded.art, art), active = excluded.active`);
+  const flag = c => c.active == null ? null : c.active ? 1 : 0;
   tx(() => {
-    for (const c of cards) up.run(c.id, c.name, c.licence, c.rarity, art.get(c.id) ?? null);
+    for (const c of cards) up.run(c.id, c.name, c.licence, c.rarity, art.get(c.id) ?? null, flag(c));
     for (const a of alts) {
       const b = byId.get(a.base_card);
-      if (b) up.run(a.id, `${b.name} (${a.style || 'Alternative'})`, b.licence, 6, pub(a.poster_path) ?? art.get(b.id) ?? null);
+      if (b) up.run(a.id, `${b.name} (${a.style || 'Alternative'})`, b.licence, 6, pub(a.poster_path) ?? art.get(b.id) ?? null, flag(b));
     }
   });
 }
@@ -523,8 +525,8 @@ function statsPlayer(id) {
     rarity: db.prepare('SELECT at, counts FROM rar_snaps WHERE player = ? ORDER BY at').all(id).map(r => ({ at: r.at, counts: JSON.parse(r.counts) })),
     dupes: JSON.parse(db.prepare('SELECT dupes FROM players WHERE id = ?').get(id)?.dupes || 'null'),
     wishes: wishesByLicence(id),
-    // ponytail: cartes connues du catalogue local, retirées du jeu comprises ; filtrer si le site en retire beaucoup.
-    rarityTotals: db.prepare('SELECT rarity, COUNT(*) AS n FROM cards WHERE rarity IS NOT NULL GROUP BY rarity').all()
+    // Cartes du catalogue encore en jeu : les cartes retirées (active = 0) restent en base mais ne comptent pas.
+    rarityTotals: db.prepare('SELECT rarity, COUNT(*) AS n FROM cards WHERE rarity IS NOT NULL AND active IS NOT 0 GROUP BY rarity').all()
       .reduce((t, r) => { t[r.rarity] = r.n; return t; }, [0, 0, 0, 0, 0, 0, 0]),
   };
 }

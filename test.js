@@ -55,6 +55,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/rest/v1/cards') return page([
       { id: 'c1', name: 'Un', licence: 'Doom', rarity: 0 }, { id: 'c2', name: 'Deux', licence: 'Doom', rarity: 4 },
       { id: 'c3', name: 'Trois', licence: 'Zelda', rarity: 5 },
+      { id: 'old0', name: 'Retirée', licence: 'Doom', rarity: 0, active: false },
       ...[['ac0', 'Alpha', 0], ['ac1', 'Alpha', 0], ['ar0', 'Alpha', 2], ['ar1', 'Alpha', 2], ['am5', 'Alpha', 5],
         ['bc0', 'Beta', 0], ['br0', 'Beta', 2], ['br1', 'Beta', 2], ['be3', 'Beta', 3], ['bc1', 'Gamma', 0], ['g2', 'Gamma', 0], ['g3', 'Gamma', 1]]
         .map(([id, licence, rarity]) => ({ id, name: id, licence, rarity })),
@@ -418,7 +419,7 @@ const start = async () => {
   assert.deepStrictEqual(mc('ac0'), { id: 'ac0', name: 'ac0', licence: 'Alpha', rarity: 0, art: null, mine: 3, theirs: 0, myWish: false, theirWish: true, pendingOut: false, pendingIn: false, value: 5 });
   assert.deepStrictEqual([mc('bc0').value, mc('bc0').myWish, mc('bc0').pendingIn, mc('br0').value, mc('ac1').pendingOut, mc('am5').value], [12, true, true, 40, true, 1200], 'cote, envie, en attente');
   const manPriv = await (await api('/api/trades/manual?user=prive')).json();
-  assert.deepStrictEqual([manPriv.private, manPriv.cards.length, manPriv.cards.every(c => c.theirs === null)], [true, 16, true], 'collection privée : tout le catalogue');
+  assert.deepStrictEqual([manPriv.private, manPriv.cards.length, manPriv.cards.every(c => c.theirs === null)], [true, 17, true], 'collection privée : tout le catalogue');
   assert.strictEqual((await api('/api/trades/manual')).status, 400);
   const own = await (await api('/api/trades/owner?user=lui')).json();
   assert.deepStrictEqual([own.private, own.name, own.cards.sort()], [false, 'Lui', ['bc0', 'bc1', 'be3', 'br0', 'br1', 'zzz']], 'collection d\'un tiers pour les filtres');
@@ -541,7 +542,7 @@ const start = async () => {
   assert.deepStrictEqual((await missing('lui', '&pending=1'))[1][ME], [2, 0, 2, 0, 0, 1, 0], 'sans effet pour un autre joueur');
   assert.strictEqual((await missing('prive'))[0], 400, 'référence privée');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
-  assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes du catalogue par rareté, alternatives comprises');
+  assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes en jeu par rareté, alternatives comprises, cartes retirées exclues');
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [
     { licence: 'Alpha', players: 1, cards: 4, size: 5 }, { licence: 'Gamma', players: 1, cards: 1, size: 3 }] }, 'licences enviées, sans mes envies');
   assert.strictEqual(st.find(x => x.id === 'lui').active_at, null, 'pas encore de mouvement');
