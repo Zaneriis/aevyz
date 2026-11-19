@@ -101,6 +101,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/rest/v1/rpc/market_cotes') return json({ bc0: [12, 3], br0: [null, 0] });
     if (p === '/rest/v1/rpc/trade_propose' && game.tradeRefusal) return json({ message: game.tradeRefusal }, 400);
     if (p === '/rest/v1/rpc/trade_propose') game.tradeProposal = JSON.parse(body);
+    if (p === '/rest/v1/rpc/lic_rar_state') return json({ enabled: true, coins: [1, 2, 3, 4, 5], sets: [] });
     if (p === '/rest/v1/rpc/trade_propose' && game.boostId) return json(game.boostId);
     if (p === '/rest/v1/rpc/trade_respond') (game.responses ||= []).push(JSON.parse(body));
     if (p === '/rest/v1/rpc/recycle_card') {
@@ -449,6 +450,7 @@ const start = async () => {
   const boost = async (q = '') => (await api('/api/boost?user=lui' + q)).json();
   let bo = await boost('&fresh=1');
   assert.strictEqual(bo.cap, 150, 'limite par défaut');
+  assert.strictEqual(bo.gold.fallback, false, 'barème lu sur le site'); assert.strictEqual(bo.gold.enabled, true);
   assert.strictEqual(bo.slots, 19, 'emplacements : 20 moins mes échanges envoyés en attente');
   assert.deepStrictEqual(bo.outs.map(o => o.cards.map(c => c.id)), [['am5']], 'groupes complets et libres seulement');
   assert.deepStrictEqual([bo.skipped.busy, bo.skipped.missing], [3, 7], 'cartes engagées ailleurs ou manquantes');

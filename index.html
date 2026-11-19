@@ -2646,6 +2646,7 @@ function renderBoost(d) {
     el('div', {className: 'boost'},
       el('div', {className: 'bset'}, el('label', {}, 'Limite de cartes chez lui ', cap), saveCap),
       el('div', {className: 'bstats'}, stat('Chez lui', d.atHim), stat('Envois en attente', d.pendingOut), stat('Place restante', d.room), stat('Échanges libres', `${d.slots}/20`), stat('Or déjà engagé', `${d.gold.pending.toLocaleString('fr-FR')} or`), stat('Or espéré avec les envois proposés', `${d.gold.planned.toLocaleString('fr-FR')} or`)),
+      ...(d.gold.fallback ? [el('p', {className: 'xnote', textContent: 'Barème du site indisponible : l\'or est calculé avec les valeurs par défaut (10, 15, 25, 40, 75).'})] : []),
       ...(d.gold.enabled === false ? [el('p', {className: 'xnote', textContent: 'Les séries par rareté ne sont pas encore activées sur le site : l\'or indiqué est une estimation.'})] : []),
       el('section', {}, el('h3', {textContent: `Retours à demander · ${d.waitingBacks}`}), ...(backs.length ? backs : [el('p', {className: 'xnote', textContent: 'Aucun retour à demander pour le moment.'})]),
         ...(d.heldBacks ? [el('p', {className: 'xnote', textContent: `${plural(d.heldBacks, 'retour')} en attente : un groupe découpé ne touche le bonus que quand tous ses échanges sont acceptés.`})] : []),
