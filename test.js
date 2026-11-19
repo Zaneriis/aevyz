@@ -255,6 +255,8 @@ const start = async () => {
   // Carte déjà possédée hors boosters (échange, achat, avant la sauvegarde) : pas de ✦.
   const { DatabaseSync } = require('node:sqlite'), side = new DatabaseSync(require('node:path').join(dir, 'aevyz.db'));
   const setOwned = cards => side.prepare('INSERT INTO players (id, cards) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET cards = excluded.cards').run(ME, JSON.stringify(cards));
+  side.prepare('UPDATE players SET cards = NULL WHERE id = ?').run(ME);
+  assert.deepStrictEqual(flags((await hist('limit=200')).openings.find(o => o.id === 'dup')), [true, false], 'sans données de collection : comportement inchangé');
   setOwned({ z9: 3 });
   assert.deepStrictEqual(flags((await hist('limit=200')).openings.find(o => o.id === 'dup')), [false, false], 'possédée en plus des boosters : pas nouvelle');
   setOwned({ z9: 4, q7: 1 });
