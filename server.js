@@ -118,7 +118,7 @@ async function sb(route, { method = 'GET', body } = {}, retry = true) {
   if (res.status === 401 && retry) { await refresh(); return sb(route, { method, body }, false); }
   const text = await res.text();
   let data; try { data = JSON.parse(text); } catch { data = text; }
-  if (!res.ok) throw new Error(data?.message || 'HTTP ' + res.status);
+  if (!res.ok) throw Object.assign(new Error(data?.message || 'HTTP ' + res.status), { refused: true });
   return data;
 }
 
@@ -817,7 +817,7 @@ function boostSync(user, trades) {
     if (!r.site_id) {
       t = trades.find(x => x.mine && x.to === user && !claimed.has(String(x.id)) && sameCards((r.dir === 'out' ? x.give : x.get) || [], r.cards));
       if (t) { db.prepare('UPDATE boost_trades SET site_id = ? WHERE id = ?').run(String(t.id), r.id); claimed.add(String(t.id)); }
-      else if (Date.now() - r.created_at > 120000) { db.prepare("UPDATE boost_trades SET status = 'echec', error = ?, closed_at = ? WHERE id = ?").run('Envoi non confirmé par le site', Date.now(), r.id); continue; }
+      else if (Date.now() - r.created_at > 600000) { db.prepare("UPDATE boost_trades SET status = 'echec', error = ?, closed_at = ? WHERE id = ?").run('Envoi non confirmé par le site', Date.now(), r.id); continue; }
     }
     if (t && t.status !== r.status) db.prepare('UPDATE boost_trades SET status = ?, closed_at = ? WHERE id = ?').run(t.status, t.status === 'attente' ? null : (Date.parse(t.closed_at) || Date.now()), r.id);
   }
@@ -857,6 +857,7 @@ async function boostPropose({ user, kind, cards, parent }) {
       const bal = boostBalance(rows), { owned, outgoing } = await mineData(), catalog = catalogMap();
       const bad = cards.find(id => typeof id !== 'string' || !(catalog.get(id)?.rarity <= 5) || bal.covered.has(id) || outgoing.has(id) || !(owned.get(id) > 0));
       if (bad !== undefined) return [400, { error: 'Une de ces cartes n\'est plus disponible pour le boost : actualise la page.' }];
+      if (!st.outs.some(o => sameCards(o.cards.map(c => c.id), cards))) return [400, { error: 'Cet envoi ne correspond plus à une proposition du boost (groupes complets) : actualise la page.' }];
       if (cards.length > st.room) return [400, { error: `Limite de ${st.cap} cartes chez ce joueur : il reste de la place pour ${st.room} cartes.` }];
       if (st.backs.length && st.slots - st.waitingBacks < 1) return [400, { error: 'Fais d\'abord les retours en attente.' }];
       list = cards; give = cards; getCoins = BOOST_COIN;
@@ -874,6 +875,12 @@ async function boostPropose({ user, kind, cards, parent }) {
       db.prepare("UPDATE boost_trades SET site_id = ?, status = 'attente' WHERE id = ?").run(body.id == null ? null : String(body.id), rowId);
       return [200, { ok: true, id: rowId }];
     } catch (e) {
+      const sure = e.refused || e.message === 'Refusé' || !e.name || !['TypeError', 'TimeoutError', 'AbortError'].includes(e.name);
+      if (!sure) { // sans réponse du site : l'échange existe peut-être, la synchro tranchera
+        db.prepare('UPDATE boost_trades SET error = ? WHERE id = ?').run('Sans réponse du site, vérification en cours', rowId);
+        log('Boost : envoi sans réponse (' + e.message + ')');
+        return [502, { error: 'Le site n\'a pas répondu : l\'envoi est peut-être parti, il sera vérifié à la prochaine actualisation.' }];
+      }
       db.prepare("UPDATE boost_trades SET status = 'echec', error = ?, closed_at = ? WHERE id = ?").run(String(e.message).slice(0, 300), Date.now(), rowId);
       log('Boost : envoi refusé (' + e.message + ')');
       return [400, { error: e.message }];
