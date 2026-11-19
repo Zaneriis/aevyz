@@ -66,6 +66,8 @@ db.exec(`
 try { db.exec('ALTER TABLE players ADD COLUMN dupes TEXT'); } catch {} // bases d'avant les doublons par rareté
 try { db.exec('ALTER TABLE cards ADD COLUMN active INTEGER'); } catch {} // 0 = carte retirée du jeu, NULL = inconnu (comptée)
 try { db.exec('ALTER TABLE players ADD COLUMN cards TEXT'); } catch {} // ids des cartes possédées, pour l'onglet Manques
+// Bases d'avant a2770eb : cards = liste d'ids ; désormais { id: exemplaires }. Un exemplaire chacune, en attendant la prochaine lecture du joueur.
+db.exec(`UPDATE players SET cards = (SELECT json_group_object(value, 1) FROM json_each(players.cards)) WHERE json_type(cards) = 'array'`);
 const kvGet = k => { const r = db.prepare('SELECT value FROM kv WHERE key = ?').get(k); return r ? JSON.parse(r.value) : null; };
 const kvSet = (k, v) => db.prepare('INSERT INTO kv VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(k, JSON.stringify(v));
 
