@@ -253,6 +253,19 @@ const start = async () => {
   all = (await hist('limit=200')).openings;
   assert.deepStrictEqual(flags(all.find(o => o.id === 'dup')), [true, false], 'doublon dans le même booster');
 
+  // Carte déjà possédée hors boosters (échange, achat, avant la sauvegarde) : pas de ✦.
+  const { DatabaseSync } = require('node:sqlite'), side = new DatabaseSync(require('node:path').join(dir, 'aevyz.db'));
+  const setOwned = cards => side.prepare('INSERT INTO players (id, cards) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET cards = excluded.cards').run(ME, JSON.stringify(cards));
+  side.prepare('UPDATE players SET cards = NULL WHERE id = ?').run(ME);
+  assert.deepStrictEqual(flags((await hist('limit=200')).openings.find(o => o.id === 'dup')), [true, false], 'sans données de collection : comportement inchangé');
+  setOwned({ z9: 3 });
+  assert.deepStrictEqual(flags((await hist('limit=200')).openings.find(o => o.id === 'dup')), [false, false], 'possédée en plus des boosters : pas nouvelle');
+  setOwned({ z9: 4, q7: 1 });
+  assert.deepStrictEqual(flags((await hist('limit=200')).openings.find(o => o.id === 'dup')), [false, false]);
+  setOwned({ z9: 2 });
+  assert.deepStrictEqual(flags((await hist('limit=200')).openings.find(o => o.id === 'dup')), [true, false], 'collection cohérente avec les boosters : nouvelle');
+  side.close();
+
   // Cadran : une étoile par booster, avec sa meilleure rareté, et mêmes filtres que l'historique.
   const tl = await (await api('/api/timeline')).json();
   assert.strictEqual(tl.length, (await hist('')).total);
