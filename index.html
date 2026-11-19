@@ -2647,6 +2647,7 @@ function renderBoost(d) {
       el('div', {className: 'bset'}, el('label', {}, 'Limite de cartes chez lui ', cap), saveCap),
       el('div', {className: 'bstats'}, stat('Chez lui', d.atHim), stat('Envois en attente', d.pendingOut), stat('Place restante', d.room), stat('Échanges libres', `${d.slots}/20`)),
       el('section', {}, el('h3', {textContent: `Retours à demander · ${d.waitingBacks}`}), ...(backs.length ? backs : [el('p', {className: 'xnote', textContent: 'Aucun retour à demander pour le moment.'})]),
+        ...(d.heldBacks ? [el('p', {className: 'xnote', textContent: `${plural(d.heldBacks, 'retour')} en attente : un groupe découpé ne touche le bonus que quand tous ses échanges sont acceptés.`})] : []),
         ...(d.waitingBacks > d.backs.length ? [el('p', {className: 'xnote', textContent: `${d.waitingBacks - d.backs.length} autre(s) retour(s) quand des échanges se libèrent.`})] : [])),
       el('section', {}, el('h3', {textContent: `Prochains envois · ${d.outs.length}`}),
         ...(outs.length ? outs : [el('p', {className: 'xnote', textContent: d.waitingBacks ? 'Récupère d\'abord les retours.' : d.room < 1 ? 'Limite de cartes chez lui atteinte : attends les retours.' : full ? 'Aucun échange libre.' : 'Rien à envoyer pour le moment.'})]),

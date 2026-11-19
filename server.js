@@ -804,6 +804,13 @@ function boostBalance(rows) {
   return { covered, atHim, pendingOut, backable };
 }
 // BOOST-END
+// Un groupe découpé en plusieurs échanges ne touche le bonus que complet : on ne rend un morceau que si tout son groupe est accepté.
+function boostReturnable(bal, rows, catalog) {
+  const accepted = new Set(rows.filter(r => r.dir === 'out' && r.status === 'acceptee').flatMap(r => r.cards));
+  const whole = new Map();
+  for (const c of catalog.values()) if (c.rarity <= 5 && c.licence) (whole.get(c.licence + '\0' + c.rarity) || whole.set(c.licence + '\0' + c.rarity, []).get(c.licence + '\0' + c.rarity)).push(c.id);
+  return bal.backable.filter(r => r.cards.every(id => { const c = catalog.get(id); return !c || c.rarity > 5 || !c.licence || (whole.get(c.licence + '\0' + c.rarity) || []).every(x => accepted.has(x)); }));
+}
 const boostCap = () => { const n = kvGet('boost_cap'); return Number.isInteger(n) && n > 0 ? n : BOOST_CAP_DEFAULT; };
 const boostRow = r => ({ ...r, cards: JSON.parse(r.cards) });
 const boostRows = user => db.prepare('SELECT * FROM boost_trades WHERE player = ? ORDER BY created_at, id').all(user).map(boostRow);
@@ -816,10 +823,10 @@ function boostSync(user, trades) {
     let t = r.site_id ? byId.get(r.site_id) : null;
     if (!r.site_id) {
       t = trades.find(x => x.mine && x.to === user && !claimed.has(String(x.id)) && sameCards((r.dir === 'out' ? x.give : x.get) || [], r.cards));
-      if (t) { db.prepare('UPDATE boost_trades SET site_id = ? WHERE id = ?').run(String(t.id), r.id); claimed.add(String(t.id)); }
+      if (t) { db.prepare('UPDATE boost_trades SET site_id = ?, error = NULL WHERE id = ?').run(String(t.id), r.id); claimed.add(String(t.id)); }
       else if (Date.now() - r.created_at > 600000) { db.prepare("UPDATE boost_trades SET status = 'echec', error = ?, closed_at = ? WHERE id = ?").run('Envoi non confirmé par le site', Date.now(), r.id); continue; }
     }
-    if (t && t.status !== r.status) db.prepare('UPDATE boost_trades SET status = ?, closed_at = ? WHERE id = ?').run(t.status, t.status === 'attente' ? null : (Date.parse(t.closed_at) || Date.now()), r.id);
+    if (t && t.status !== r.status) db.prepare('UPDATE boost_trades SET status = ?, error = NULL, closed_at = ? WHERE id = ?').run(t.status, t.status === 'attente' ? null : (Date.parse(t.closed_at) || Date.now()), r.id);
   }
 }
 async function boostState(user, fresh = false) {
@@ -829,14 +836,15 @@ async function boostState(user, fresh = false) {
   const rows = boostRows(user), bal = boostBalance(rows), catalog = catalogMap();
   const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
   const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
-  const backs = bal.backable.slice(0, slots);
+  const ready = boostReturnable(bal, rows, catalog), backs = ready.slice(0, slots);
   // Les retours passent avant les nouveaux envois : on alterne au lieu d'empiler tout chez lui.
   const plan = boostPlan({ catalog: [...catalog.values()], owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length) });
+  const held = bal.backable.length - ready.length;
   const card = id => ({ id, ...catalog.get(id) });
   const p = db.prepare('SELECT name, avatar FROM players WHERE id = ?').get(user);
   return { user, name: p?.name || null, avatar: p?.avatar || null, cap, atHim: bal.atHim, pendingOut: bal.pendingOut, room, slots, coin: BOOST_COIN,
     outs: plan.outs.map(o => ({ groups: o.groups, cards: o.cards.map(c => card(c.id)) })), skipped: plan.skipped, groups: plan.groups, left: plan.left,
-    backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: bal.backable.length,
+    backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: ready.length, heldBacks: held,
     history: rows.slice().reverse().map(r => ({ id: r.id, dir: r.dir, status: r.status, error: r.error, created_at: r.created_at, closed_at: r.closed_at, parent: r.parent, cards: r.cards.map(card) })) };
 }
 function saveBoostCap({ cap }) {
@@ -863,7 +871,7 @@ async function boostPropose({ user, kind, cards, parent }) {
       list = cards; give = cards; getCoins = BOOST_COIN;
     } else {
       const r = rows.find(x => x.id === parent && x.dir === 'out');
-      if (!r || !boostBalance(rows).backable.some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
+      if (!r || !boostReturnable(boostBalance(rows), rows, catalogMap()).some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
       list = r.cards; get = r.cards; giveCoins = BOOST_COIN;
     }
     const ins = db.prepare('INSERT INTO boost_trades (player, name, dir, parent, cards, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
