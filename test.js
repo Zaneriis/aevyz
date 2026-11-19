@@ -69,6 +69,7 @@ const fake = http.createServer((req, res) => {
       { id: 2, mine: false, status: 'attente', from: 'lui', from_name: 'Lui', give: ['br0'], get: ['ar1', 'bc1'], message: 'Salut' }, // reçu : je recevrais br0, je donnerais ar1 et bc1
       { id: 3, mine: true, status: 'refusee', give: ['ar0'], get: ['br1'] }, // terminé : ne compte plus
       { id: 4, mine: false, status: 'attente', from: 'prive', from_name: 'Privé', give: ['bc0'], get: [], get_coins: 40 }, // reçu : me coûterait 40 pièces
+      ...(game.extraTrades || []),
     ], mine: game.mine || [] });
     if (p === '/rest/v1/rpc/market_cancel') {
       const { p_id } = JSON.parse(body), l = (game.mine || []).find(x => x.id === p_id && x.status === 'active');
@@ -99,6 +100,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/rest/v1/rpc/market_cotes') return json({ bc0: [12, 3], br0: [null, 0] });
     if (p === '/rest/v1/rpc/trade_propose' && game.tradeRefusal) return json({ message: game.tradeRefusal }, 400);
     if (p === '/rest/v1/rpc/trade_propose') game.tradeProposal = JSON.parse(body);
+    if (p === '/rest/v1/rpc/trade_propose' && game.boostId) return json(game.boostId);
     if (p === '/rest/v1/rpc/trade_respond') (game.responses ||= []).push(JSON.parse(body));
     if (p === '/rest/v1/rpc/recycle_card') {
       const a = JSON.parse(body);
@@ -441,6 +443,37 @@ const start = async () => {
   assert.strictEqual((await respond({ id: 2, accept: true })).status, 200);
   assert.strictEqual((await respond({ id: 1, accept: true })).status, 200, "un envoi ne peut qu'être annulé");
   assert.deepStrictEqual(game.responses, [{ p_id: 2, p_accept: true }, { p_id: 1, p_accept: false }]);
+
+  // Boost : propositions d'envoi puis de retour, limite enregistrée, historique conservé.
+  const boost = async (q = '') => (await api('/api/boost?user=lui' + q)).json();
+  let bo = await boost('&fresh=1');
+  assert.strictEqual(bo.cap, 150, 'limite par défaut');
+  assert.strictEqual(bo.slots, 19, 'emplacements : 20 moins mes échanges envoyés en attente');
+  assert.deepStrictEqual(bo.outs.map(o => o.cards.map(c => c.id)), [['am5']], 'groupes complets et libres seulement');
+  assert.deepStrictEqual([bo.skipped.busy, bo.skipped.missing], [3, 7], 'cartes engagées ailleurs ou manquantes');
+  assert.strictEqual((await post('/api/boost/cap', { cap: 0 })).status, 400);
+  assert.strictEqual((await post('/api/boost/cap', { cap: 1 })).status, 200);
+  assert.strictEqual((await boost()).room, 1, 'limite absolue en nombre de cartes');
+  assert.strictEqual((await post('/api/boost/cap', { cap: 150 })).status, 200);
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'out', cards: ['ac1'] })).status, 400, 'carte engagée : refusée');
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'out', cards: ['am5', 'am5'] })).status, 400, 'doublon : refusé');
+  game.boostId = 77;
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'out', cards: ['am5'] })).status, 200);
+  assert.deepStrictEqual([game.tradeProposal.p_give, game.tradeProposal.p_get, game.tradeProposal.p_get_coins], [['am5'], [], 1], 'envoi contre 1 pièce');
+  bo = await boost('&fresh=1');
+  assert.deepStrictEqual([bo.pendingOut, bo.atHim, bo.outs.length, bo.history.length, bo.history[0].status], [1, 0, 0, 1, 'attente']);
+  game.extraTrades = [{ id: 77, mine: true, status: 'acceptee', to: 'lui', give: ['am5'], get: [] }];
+  bo = await boost('&fresh=1');
+  assert.deepStrictEqual([bo.atHim, bo.backs.length], [1, 1], 'accepté : chez lui, retour proposé');
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: 999 })).status, 400);
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.backs[0].id })).status, 200);
+  assert.deepStrictEqual([game.tradeProposal.p_give, game.tradeProposal.p_get, game.tradeProposal.p_give_coins], [[], ['am5'], 1], 'retour : l\'inverse exact');
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.backs[0].id })).status, 400, 'un seul retour à la fois');
+  game.boostId = 78;
+  game.extraTrades.push({ id: 78, mine: true, status: 'acceptee', to: 'lui', give: [], get: ['am5'] });
+  bo = await boost('&fresh=1');
+  assert.deepStrictEqual([bo.atHim, bo.backs.length, bo.history.map(h => h.status)], [0, 0, ['acceptee', 'acceptee']], 'retour accepté : plus rien chez lui');
+  game.boostId = null; game.extraTrades = [];
 
   // Recyclage : jamais le dernier exemplaire, une carte à la fois.
   const col = await (await api('/api/collection')).json();
