@@ -118,7 +118,7 @@ async function sb(route, { method = 'GET', body } = {}, retry = true) {
   if (res.status === 401 && retry) { await refresh(); return sb(route, { method, body }, false); }
   const text = await res.text();
   let data; try { data = JSON.parse(text); } catch { data = text; }
-  if (!res.ok) throw Object.assign(new Error(data?.message || 'HTTP ' + res.status), { refused: true });
+  if (!res.ok) throw Object.assign(new Error(data?.message || 'HTTP ' + res.status), { refused: res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429 }); // 5xx, 408, 429 : l'action a pu aboutir
   return data;
 }
 
@@ -871,12 +871,11 @@ async function boostPropose({ user, kind, cards, parent }) {
     const rowId = Number(ins.lastInsertRowid);
     try {
       const [code, body] = await proposeTrade({ to: user, give, get, giveCoins, getCoins, message: '' });
-      if (code !== 200) throw new Error(body.error || 'Refusé');
+      if (code !== 200) throw Object.assign(new Error(body.error || 'Refusé'), { refused: true });
       db.prepare("UPDATE boost_trades SET site_id = ?, status = 'attente' WHERE id = ?").run(body.id == null ? null : String(body.id), rowId);
       return [200, { ok: true, id: rowId }];
     } catch (e) {
-      const sure = e.refused || e.message === 'Refusé' || !e.name || !['TypeError', 'TimeoutError', 'AbortError'].includes(e.name);
-      if (!sure) { // sans réponse du site : l'échange existe peut-être, la synchro tranchera
+      if (!e.refused) { // sans réponse du site : l'échange existe peut-être, la synchro tranchera
         db.prepare('UPDATE boost_trades SET error = ? WHERE id = ?').run('Sans réponse du site, vérification en cours', rowId);
         log('Boost : envoi sans réponse (' + e.message + ')');
         return [502, { error: 'Le site n\'a pas répondu : l\'envoi est peut-être parti, il sera vérifié à la prochaine actualisation.' }];
