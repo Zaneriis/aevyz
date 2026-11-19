@@ -188,6 +188,16 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .plist small{color:var(--muted)}
 .xhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:14px}
 .xhead h2{margin:0}
+.boost{display:grid;gap:18px}
+.boost .bset{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:end}
+.boost .bset input{width:6.5em}
+.boost .bstats{display:flex;flex-wrap:wrap;gap:10px}
+.boost details.bx{border:1px solid var(--line);border-radius:14px;padding:10px 14px;background:var(--glass)}
+.boost details.bx>summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.boost details.bx .tgrid{margin:12px 0}
+.boost .bgroups{display:flex;flex-wrap:wrap;gap:6px}
+.boost .bgroups span,.boost .bst{font-size:.78rem;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.boost .bst.ok{color:#7be08f}.boost .bst.ko{color:#ff8a8a}
 .xnote{color:var(--muted);font-size:.92rem;margin:0 0 14px}
 .xblock{padding:14px;margin-bottom:14px}
 .xblock h3{margin-bottom:10px}
@@ -480,6 +490,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
   <div id="viewTrades" hidden>
     <nav class="tabs subtabs" aria-label="Échanges">
       <a href="#echanges">Proposer un échange</a>
+      <a href="#echanges-boost">Boost</a>
       <a href="#echanges-attente">En attente<mark class="pbadge" data-pending hidden></mark></a>
       <a href="#echanges-historique">Historique</a>
     </nav>
@@ -504,6 +515,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
         <div class="plist" id="playerList"></div>
       </aside>
       <div>
+        <div id="proposePane">
         <div class="xhead">
           <h2 id="tradeTitle">Choisis un joueur</h2>
           <div class="xfilters">
@@ -519,6 +531,8 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
           </div>
         </div>
         <div id="tradeBody" aria-live="polite"><p class="xnote">Les modes classiques suivent vos envies. « Doublons sans envies » les ignore et ne garde que les cartes dont vous avez chacun au moins deux exemplaires. La pastille indique la taille de l'échange maximum. Rien ne part sans ton clic sur « Envoyer ».</p></div>
+        </div>
+        <div id="boostPane" hidden></div>
       </div>
     </section>
   </div>
@@ -1543,6 +1557,7 @@ function pickTrade(id, name) {
   tradeMsg = '';
   $('tradeTitle').textContent = name || 'Joueur';
   renderPlayers();
+  if (location.hash === '#echanges-boost') return loadBoost();
   loadTrades();
 }
 function renderPlayers() {
@@ -2577,8 +2592,72 @@ async function loadDle() {
 $('dleFilters').oninput = $('dleFilters').onchange = renderDle;
 $('dleReset').onclick = () => { $('dleFilters').querySelectorAll('input,select').forEach(i => { i.value = ''; }); dleEx = []; renderDle(); };
 
+
+// ---- Boost : propositions d'envoi et de retour vers un joueur de confiance, avec historique ----
+const BOOST_STATUS = {envoi: 'envoi en cours', attente: 'en attente', acceptee: 'accepté', refusee: 'refusé', annulee: 'annulé', expiree: 'expiré', echec: 'échec'};
+let boostSeq = 0, boostNote = '', boostBusyUi = false;
+const boostBox = () => $('boostPane');
+async function loadBoost(fresh = false) {
+  if (!tradeUser) return boostBox().replaceChildren(el('h2', {textContent: 'Boost'}), el('p', {className: 'xnote', textContent: 'Choisis le joueur de confiance dans la liste : je te propose les envois de cartes, puis les retours. Rien ne part sans ton clic.'}));
+  const seq = ++boostSeq;
+  if (!boostBox().firstChild || boostBox().dataset.user !== tradeUser) boostBox().replaceChildren(el('p', {className: 'xnote', textContent: 'Chargement…'}));
+  try {
+    const d = await getJson(`api/boost?user=${encodeURIComponent(tradeUser)}${fresh ? '&fresh=1' : ''}`);
+    if (seq === boostSeq) renderBoost(d);
+  } catch (e) { if (seq === boostSeq) boostBox().replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
+}
+async function boostSend(body, btn) {
+  if (boostBusyUi) return;
+  boostBusyUi = true; btn.disabled = true;
+  try { await post('api/boost/propose', {user: tradeUser, ...body}); boostNote = 'Proposition envoyée.'; tradeCounts.clear(); loadPending(); }
+  catch (e) { boostNote = 'Échec : ' + e.message; }
+  boostBusyUi = false;
+  loadBoost(true);
+}
+const boostGroups = gs => el('div', {className: 'bgroups'}, ...gs.map(g => el('span', {textContent: `${g.licence} · ${RARITIES[g.rarity]} · ${g.n}${g.n < g.total ? '/' + g.total : ''}`})));
+const boostCards = cs => el('div', {className: 'tgrid'}, ...cs.map(c => cardEl(c)));
+function renderBoost(d) {
+  const box = boostBox();
+  box.dataset.user = d.user;
+  const cap = el('input', {type: 'number', min: 1, max: 100000, step: 1, value: d.cap, 'aria-label': 'Limite de cartes chez ce joueur'});
+  const saveCap = el('button', {type: 'button', className: 'ghost', textContent: 'Enregistrer', onclick: async () => {
+    try { await post('api/boost/cap', {cap: Number(cap.value)}); boostNote = 'Limite enregistrée.'; } catch (e) { boostNote = e.message; }
+    loadBoost();
+  }});
+  const stat = (k, v) => el('div', {className: 'stat'}, el('small', {textContent: k}), el('b', {textContent: v}));
+  const full = d.slots < 1;
+  const backs = d.backs.map(b => el('details', {className: 'bx'},
+    el('summary', {}, el('b', {textContent: `Retour de ${plural(b.cards.length, 'carte')}`}), el('small', {className: 'xnote', style: 'margin:0', textContent: b.accepted_at ? `accepté ${time(b.accepted_at)}` : ''}),
+      el('button', {type: 'button', textContent: 'Demander le retour', disabled: full, onclick: e => { e.preventDefault(); boostSend({kind: 'back', parent: b.id}, e.target); }})),
+    boostCards(b.cards)));
+  const outs = d.outs.map(o => el('details', {className: 'bx'},
+    el('summary', {}, el('b', {textContent: `Envoi de ${plural(o.cards.length, 'carte')}`}), boostGroups(o.groups),
+      el('button', {type: 'button', textContent: 'Envoyer', onclick: e => { e.preventDefault(); boostSend({kind: 'out', cards: o.cards.map(c => c.id)}, e.target); }})),
+    boostCards(o.cards)));
+  const sk = d.skipped, notes = [sk.missing && `${plural(sk.missing, 'groupe')} incomplet${sk.missing > 1 ? 's' : ''} chez toi (il te manque des cartes)`, sk.busy && `${plural(sk.busy, 'groupe')} avec des cartes déjà engagées dans un échange en attente`, sk.done && `${sk.done} déjà envoyé${sk.done > 1 ? 's' : ''}`].filter(Boolean);
+  const hist = d.history.map(h => el('details', {className: 'bx'},
+    el('summary', {}, el('b', {textContent: `${h.dir === 'out' ? 'Envoi' : 'Retour'} · ${plural(h.cards.length, 'carte')}`}), el('span', {className: 'bst ' + (h.status === 'acceptee' ? 'ok' : ['refusee', 'annulee', 'expiree', 'echec'].includes(h.status) ? 'ko' : ''), textContent: BOOST_STATUS[h.status] || h.status}),
+      el('small', {className: 'xnote', style: 'margin:0', textContent: time(h.created_at) + (h.error ? ' · ' + h.error : '')})),
+    boostCards(h.cards)));
+  box.replaceChildren(
+    el('div', {className: 'xhead'}, el('h2', {textContent: `Boost · ${d.name || 'joueur'}`}), el('button', {type: 'button', className: 'ghost', textContent: 'Actualiser', onclick: () => loadBoost(true)})),
+    el('p', {className: 'xnote', textContent: `Chaque envoi donne 1 exemplaire de chaque carte d'un groupe licence × rareté, contre ${d.coin} pièce ; le retour fait l'inverse. Les Mythiques Alternatives sont exclues. Je ne lis pas sa collection. Rien ne part sans ton clic.`}),
+    ...(boostNote ? [el('p', {className: 'xsent', role: 'status', textContent: boostNote})] : []),
+    el('div', {className: 'boost'},
+      el('div', {className: 'bset'}, el('label', {}, 'Limite de cartes chez lui ', cap), saveCap),
+      el('div', {className: 'bstats'}, stat('Chez lui', d.atHim), stat('Envois en attente', d.pendingOut), stat('Place restante', d.room), stat('Échanges libres', `${d.slots}/20`)),
+      el('section', {}, el('h3', {textContent: `Retours à demander · ${d.waitingBacks}`}), ...(backs.length ? backs : [el('p', {className: 'xnote', textContent: 'Aucun retour à demander pour le moment.'})]),
+        ...(d.waitingBacks > d.backs.length ? [el('p', {className: 'xnote', textContent: `${d.waitingBacks - d.backs.length} autre(s) retour(s) quand des échanges se libèrent.`})] : [])),
+      el('section', {}, el('h3', {textContent: `Prochains envois · ${d.outs.length}`}),
+        ...(outs.length ? outs : [el('p', {className: 'xnote', textContent: d.waitingBacks ? 'Récupère d\'abord les retours.' : d.room < 1 ? 'Limite de cartes chez lui atteinte : attends les retours.' : full ? 'Aucun échange libre.' : 'Rien à envoyer pour le moment.'})]),
+        ...(d.left > 0 ? [el('p', {className: 'xnote', textContent: `${plural(d.left, 'échange')} de plus à prévoir ensuite.`})] : []),
+        ...notes.map(n => el('p', {className: 'xnote', textContent: n}))),
+      el('section', {}, el('h3', {textContent: `Historique du boost · ${d.history.length}`}), ...(hist.length ? hist : [el('p', {className: 'xnote', textContent: 'Aucun échange de boost pour ce joueur.'})]))));
+  boostNote = '';
+}
+
 function showView() {
-  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#marche-vente': 'viewMarket', '#marche-annonces': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#echanges-boost': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#marche-vente': 'viewMarket', '#marche-annonces': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
   for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats', 'viewArcade']) $(id).hidden = id !== view;
   if (view === 'viewMarket') { mkNewSince ??= mkSeenAt; loadMarket(); } else mkNewSince = null; // nouveaux achats surlignés pendant la visite
   paintMkBadge();
@@ -2597,14 +2676,17 @@ function showView() {
   if (location.hash === '#stats') loadStats();
   if (location.hash === '#stats-licences') loadEnvy();
   document.querySelectorAll('.tabs:not(.subtabs) a').forEach(a => { if ((views[a.hash] || 'viewBoosters') === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  const propose = location.hash === '#echanges', hist = location.hash === '#echanges-historique';
-  $('subPending').hidden = propose || hist;
-  $('subPropose').hidden = !propose;
+  const propose = location.hash === '#echanges', boost = location.hash === '#echanges-boost', hist = location.hash === '#echanges-historique';
+  $('subPending').hidden = propose || boost || hist;
+  $('subPropose').hidden = !(propose || boost);
+  $('proposePane').hidden = boost;
+  $('boostPane').hidden = !boost;
+  if (boost) loadBoost();
   $('subHistory').hidden = !hist;
   if (hist) loadTradeHistory();
   document.querySelectorAll('.subtabs a').forEach(a => { if (a.hash === location.hash) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   if (view === 'viewTrades') loadPending();
-  if (propose) { scanStopped = false; loadPlayers().then(scanPlayers); }
+  if (propose || boost) { scanStopped = false; loadPlayers().then(scanPlayers); }
   if (view === 'viewRecycle') loadRecycle();
   if (view === 'viewArcade') loadDle();
   document.querySelectorAll('.subtabs a').forEach(a => { if (a.hash === location.hash) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });

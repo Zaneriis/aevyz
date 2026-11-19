@@ -58,6 +58,9 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, name TEXT, avatar TEXT, active_at INTEGER, wishes TEXT, read_at INTEGER);
   CREATE TABLE IF NOT EXISTS snaps (player TEXT NOT NULL, at INTEGER NOT NULL, total INTEGER, uniq INTEGER, opened INTEGER, mythics INTEGER,
     pos_uniq INTEGER, pos_total INTEGER, pos_opened INTEGER, pos_myth INTEGER, PRIMARY KEY (player, at));
+  CREATE TABLE IF NOT EXISTS boost_trades (id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, name TEXT, dir TEXT NOT NULL, parent INTEGER,
+    site_id TEXT, cards TEXT NOT NULL, status TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL, closed_at INTEGER);
+  CREATE INDEX IF NOT EXISTS boost_trades_player ON boost_trades (player, created_at);
   CREATE TABLE IF NOT EXISTS rar_snaps (player TEXT NOT NULL, at INTEGER NOT NULL, counts TEXT NOT NULL, PRIMARY KEY (player, at));
 `);
 try { db.exec('ALTER TABLE players ADD COLUMN dupes TEXT'); } catch {} // bases d'avant les doublons par rareté
@@ -599,7 +602,7 @@ async function mineData() {
     const waiting = (market?.trades || []).filter(t => t.status === 'attente');
     const incoming = waiting.flatMap(t => (t.mine ? t.get : t.give) || []), outgoing = waiting.flatMap(t => (t.mine ? t.give : t.get) || []);
     mineCache = { at: Date.now(), owned: new Map(owned.map(r => [r.card_id, r.count])), wishes: new Set(wishes.map(r => r.card_id)), incoming: new Set(incoming), outgoing: new Set(outgoing),
-      listed: (market?.mine || []).filter(l => l.status === 'active').length };
+      listed: (market?.mine || []).filter(l => l.status === 'active').length, trades: market?.trades || [] };
   }
   return mineCache;
 }
@@ -738,6 +741,144 @@ async function respondTrade({ id, accept }) {
   if (t.player) theirsCache.delete(t.player);
   log(`Échange avec ${t.name || 'un joueur'} ${t.mine ? 'annulé' : accept === true ? 'accepté' : 'refusé'}`);
   return [200, { ok: true }];
+}
+
+// ---- Boost : envoyer des groupes (licence × rareté) à un joueur de confiance pour qu'il touche le bonus d'or, puis les récupérer ----
+// Chaque envoi/retour est écrit en base AVANT l'appel au site, puis relu avec le statut réel de l'échange. Rien ne part sans clic.
+const BOOST_SLOTS = 20; // échanges en attente maximum sur le site
+const BOOST_CAP_DEFAULT = 150, BOOST_CAP_MAX = 100000, BOOST_COIN = 1; // le site exige une contrepartie : 1 pièce, rendue au retour
+let boostBusy = false;
+// BOOST-START
+// Regroupe les cartes restantes par (licence, rareté), écarte les groupes que je ne peux pas envoyer en entier, puis les range
+// dans le moins d'échanges possible (premier ajustement décroissant). Les Mythiques Alternatives (rareté 6) sont exclues.
+function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20 }) {
+  const groups = new Map();
+  for (const c of catalog) {
+    if (c.rarity == null || c.rarity > 5 || !c.licence) continue;
+    const k = c.licence + '\0' + c.rarity;
+    if (!groups.has(k)) groups.set(k, { licence: c.licence, rarity: c.rarity, cards: [] });
+    groups.get(k).cards.push(c);
+  }
+  const skipped = { done: 0, missing: 0, busy: 0 }, pieces = [];
+  for (const g of groups.values()) {
+    const rest = g.cards.filter(c => !covered.has(c.id)).sort((a, b) => (a.id < b.id ? -1 : 1));
+    if (!rest.length) { skipped.done++; continue; }
+    if (rest.some(c => busy.has(c.id))) { skipped.busy++; continue; }
+    if (rest.some(c => !(owned.get(c.id) > 0))) { skipped.missing++; continue; }
+    for (let i = 0; i < rest.length; i += max) pieces.push({ licence: g.licence, rarity: g.rarity, total: g.cards.length, cards: rest.slice(i, i + max) });
+  }
+  pieces.sort((a, b) => b.cards.length - a.cards.length || b.rarity - a.rarity || (a.licence < b.licence ? -1 : 1));
+  const bins = [];
+  for (const p of pieces) {
+    let bin = bins.find(b => b.cards.length + p.cards.length <= max);
+    if (!bin) bins.push(bin = { cards: [], groups: [] });
+    bin.cards.push(...p.cards);
+    bin.groups.push({ licence: p.licence, rarity: p.rarity, n: p.cards.length, total: p.total });
+  }
+  bins.sort((a, b) => b.cards.length - a.cards.length || Math.max(...b.groups.map(g => g.rarity)) - Math.max(...a.groups.map(g => g.rarity)));
+  const outs = [];
+  let used = 0;
+  for (const b of bins) {
+    if (outs.length >= slots) break;
+    if (used + b.cards.length > room) continue; // un échange plus petit peut encore tenir
+    outs.push(b);
+    used += b.cards.length;
+  }
+  return { outs, skipped, groups: groups.size, left: bins.length - outs.length };
+}
+// Où en est ce joueur : cartes déjà engagées dans un envoi (ne pas renvoyer), cartes actuellement chez lui, retours possibles.
+function boostBalance(rows) {
+  const live = new Set(['envoi', 'attente', 'acceptee']);
+  const covered = new Set(), backable = [];
+  let atHim = 0, pendingOut = 0;
+  const back = new Map(); // parent -> statuts des retours
+  for (const r of rows) if (r.dir === 'back') (back.get(r.parent) || back.set(r.parent, []).get(r.parent)).push(r.status);
+  for (const r of rows) {
+    if (r.dir !== 'out' || !live.has(r.status)) continue;
+    r.cards.forEach(id => covered.add(id));
+    if (r.status !== 'acceptee') { pendingOut += r.cards.length; continue; }
+    const st = back.get(r.id) || [];
+    if (!st.includes('acceptee')) atHim += r.cards.length;
+    if (!st.some(s => live.has(s))) backable.push(r);
+  }
+  return { covered, atHim, pendingOut, backable };
+}
+// BOOST-END
+const boostCap = () => { const n = kvGet('boost_cap'); return Number.isInteger(n) && n > 0 ? n : BOOST_CAP_DEFAULT; };
+const boostRow = r => ({ ...r, cards: JSON.parse(r.cards) });
+const boostRows = user => db.prepare('SELECT * FROM boost_trades WHERE player = ? ORDER BY created_at, id').all(user).map(boostRow);
+const sameCards = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+// Relit le statut réel des échanges du boost sur le site (acceptés, refusés, expirés) et rattache les envois restés sans identifiant.
+function boostSync(user, trades) {
+  const byId = new Map(trades.map(t => [String(t.id), t])), claimed = new Set(db.prepare('SELECT site_id FROM boost_trades WHERE site_id IS NOT NULL').all().map(r => r.site_id));
+  for (const r of boostRows(user)) {
+    if (!['envoi', 'attente'].includes(r.status)) continue;
+    let t = r.site_id ? byId.get(r.site_id) : null;
+    if (!r.site_id) {
+      t = trades.find(x => x.mine && x.to === user && !claimed.has(String(x.id)) && sameCards((r.dir === 'out' ? x.give : x.get) || [], r.cards));
+      if (t) { db.prepare('UPDATE boost_trades SET site_id = ? WHERE id = ?').run(String(t.id), r.id); claimed.add(String(t.id)); }
+      else if (Date.now() - r.created_at > 120000) { db.prepare("UPDATE boost_trades SET status = 'echec', error = ?, closed_at = ? WHERE id = ?").run('Envoi non confirmé par le site', Date.now(), r.id); continue; }
+    }
+    if (t && t.status !== r.status) db.prepare('UPDATE boost_trades SET status = ?, closed_at = ? WHERE id = ?').run(t.status, t.status === 'attente' ? null : (Date.parse(t.closed_at) || Date.now()), r.id);
+  }
+}
+async function boostState(user, fresh = false) {
+  if (fresh) mineCache = null;
+  const { owned, outgoing, trades } = await mineData();
+  boostSync(user, trades);
+  const rows = boostRows(user), bal = boostBalance(rows), catalog = catalogMap();
+  const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
+  const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
+  const backs = bal.backable.slice(0, slots);
+  // Les retours passent avant les nouveaux envois : on alterne au lieu d'empiler tout chez lui.
+  const plan = boostPlan({ catalog: [...catalog.values()], owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length) });
+  const card = id => ({ id, ...catalog.get(id) });
+  const p = db.prepare('SELECT name, avatar FROM players WHERE id = ?').get(user);
+  return { user, name: p?.name || null, avatar: p?.avatar || null, cap, atHim: bal.atHim, pendingOut: bal.pendingOut, room, slots, coin: BOOST_COIN,
+    outs: plan.outs.map(o => ({ groups: o.groups, cards: o.cards.map(c => card(c.id)) })), skipped: plan.skipped, groups: plan.groups, left: plan.left,
+    backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: bal.backable.length,
+    history: rows.slice().reverse().map(r => ({ id: r.id, dir: r.dir, status: r.status, error: r.error, created_at: r.created_at, closed_at: r.closed_at, parent: r.parent, cards: r.cards.map(card) })) };
+}
+function saveBoostCap({ cap }) {
+  if (!Number.isInteger(cap) || cap < 1 || cap > BOOST_CAP_MAX) return [400, { error: `Limite : un nombre entier de cartes entre 1 et ${BOOST_CAP_MAX}.` }];
+  kvSet('boost_cap', cap);
+  return [200, { ok: true, cap }];
+}
+async function boostPropose({ user, kind, cards, parent }) {
+  if (typeof user !== 'string' || !user || !['out', 'back'].includes(kind)) return [400, { error: 'Joueur ou type invalide.' }];
+  if (boostBusy) return [409, { error: 'Un envoi du boost est déjà en cours.' }];
+  boostBusy = true;
+  try {
+    const st = await boostState(user, true), rows = boostRows(user);
+    let give = [], get = [], giveCoins = 0, getCoins = 0, list;
+    if (st.slots < 1) return [400, { error: 'Plus aucun emplacement d\'échange libre (20 en attente).' }];
+    if (kind === 'out') {
+      if (!Array.isArray(cards) || !cards.length || cards.length > TRADE_MAX || new Set(cards).size !== cards.length) return [400, { error: `De 1 à ${TRADE_MAX} cartes différentes.` }];
+      const bal = boostBalance(rows), { owned, outgoing } = await mineData(), catalog = catalogMap();
+      const bad = cards.find(id => typeof id !== 'string' || !(catalog.get(id)?.rarity <= 5) || bal.covered.has(id) || outgoing.has(id) || !(owned.get(id) > 0));
+      if (bad !== undefined) return [400, { error: 'Une de ces cartes n\'est plus disponible pour le boost : actualise la page.' }];
+      if (cards.length > st.room) return [400, { error: `Limite de ${st.cap} cartes chez ce joueur : il reste de la place pour ${st.room} cartes.` }];
+      if (st.backs.length && st.slots - st.waitingBacks < 1) return [400, { error: 'Fais d\'abord les retours en attente.' }];
+      list = cards; give = cards; getCoins = BOOST_COIN;
+    } else {
+      const r = rows.find(x => x.id === parent && x.dir === 'out');
+      if (!r || !boostBalance(rows).backable.some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
+      list = r.cards; get = r.cards; giveCoins = BOOST_COIN;
+    }
+    const ins = db.prepare('INSERT INTO boost_trades (player, name, dir, parent, cards, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(user, st.name, kind, kind === 'back' ? parent : null, JSON.stringify(list), 'envoi', Date.now());
+    const rowId = Number(ins.lastInsertRowid);
+    try {
+      const [code, body] = await proposeTrade({ to: user, give, get, giveCoins, getCoins, message: '' });
+      if (code !== 200) throw new Error(body.error || 'Refusé');
+      db.prepare("UPDATE boost_trades SET site_id = ?, status = 'attente' WHERE id = ?").run(body.id == null ? null : String(body.id), rowId);
+      return [200, { ok: true, id: rowId }];
+    } catch (e) {
+      db.prepare("UPDATE boost_trades SET status = 'echec', error = ?, closed_at = ? WHERE id = ?").run(String(e.message).slice(0, 300), Date.now(), rowId);
+      log('Boost : envoi refusé (' + e.message + ')');
+      return [400, { error: e.message }];
+    }
+  } finally { boostBusy = false; }
 }
 
 // ---- Recyclage : toujours au moins un exemplaire gardé, une carte à la fois en arrière-plan ----
@@ -1132,6 +1273,11 @@ const server = http.createServer(async (req, res) => {
       if (!user) return send(400, { error: 'Joueur invalide' });
       return send(200, tradeCounts(await tradeData(user, BADGE_CACHE_MS)));
     }
+    if (req.method === 'GET' && url.pathname === '/api/boost') {
+      const user = url.searchParams.get('user');
+      if (!user) return send(400, { error: 'Joueur invalide' });
+      return send(200, await boostState(user, url.searchParams.get('fresh') === '1'));
+    }
     if (req.method === 'GET' && url.pathname === '/api/pending') return send(200, await pendingTrades(url.searchParams.get('all') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/collection') return send(200, await collection());
     if (req.method === 'GET' && url.pathname === '/api/market') return send(200, await marketState());
@@ -1150,6 +1296,8 @@ const server = http.createServer(async (req, res) => {
         return send(200, { ok: true });
       }
       if (url.pathname === '/api/trades/propose') return send(...await proposeTrade(body));
+      if (url.pathname === '/api/boost/cap') return send(...saveBoostCap(body));
+      if (url.pathname === '/api/boost/propose') return send(...await boostPropose(body));
       if (url.pathname === '/api/pending/respond') return send(...await respondTrade(body));
       if (url.pathname === '/api/recycle') return send(...await startRecycle(body));
       if (url.pathname === '/api/market/sell') return send(...await sellCards(body));
