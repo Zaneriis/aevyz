@@ -566,6 +566,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
       <a href="#marche">Prix fixe</a>
       <a href="#marche-encheres">Enchères</a>
       <a href="#marche-vente">Vendre</a>
+      <a href="#marche-annonces">Mes annonces</a>
     </nav>
     <section id="subMkAuctions">
       <h2>Enchères programmées</h2>
@@ -614,6 +615,32 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
         <p class="xnote" id="slMsg" role="status"></p>
         <p class="xnote">Taxe du marché selon le prix : aucune sous 50 pièces, puis 5 % jusqu'à 200, 8 % jusqu'à 1 000 et 12 % au-delà. 50 annonces en cours au maximum.</p>
       </aside>
+    </section>
+    <section id="subMkMine" hidden>
+      <div class="xhead"><h2>Mes annonces <span id="myCount" class="xnote"></span></h2>
+        <button type="button" id="myDel" disabled>Retirer la sélection</button></div>
+      <div class="xfilters" id="myFilters" style="margin-bottom:10px">
+        <input type="search" id="myQ" placeholder="Rechercher une carte, une licence…" aria-label="Rechercher dans mes annonces" class="mksel">
+        <select id="mySort" aria-label="Trier mes annonces" class="mksel">
+          <option value="end">Fin la plus proche</option><option value="price-">Prix décroissant</option><option value="price">Prix croissant</option>
+          <option value="rar">Rareté</option><option value="name">Nom</option>
+        </select>
+        <label class="xsafe"><input type="checkbox" id="myAll">Tout cocher</label>
+      </div>
+      <div class="glass panel xfilters" id="myBulk" style="margin-bottom:10px">
+        <span>Prix <input type="number" id="myPx" min="1" max="10000000" class="mksel" style="width:7em" aria-label="Nouveau prix pour les annonces cochées"> <button class="ghost" type="button" id="myPxGo">Appliquer</button></span>
+        <span><input type="number" id="myPct" min="1" value="100" class="mksel" style="width:5em" aria-label="Pourcentage de la cote"> % de la cote <button class="ghost" type="button" id="myPctGo">Appliquer</button></span>
+        <select id="myHours" aria-label="Durée à la remise en vente" class="mksel" title="Durée de l'annonce une fois modifiée.">
+          <option value="">Durée : celle qui reste</option><option value="24">1 jour</option><option value="72">3 jours</option><option value="168">7 jours</option>
+        </select>
+        <select id="myTrade" aria-label="Propositions d'échange" class="mksel">
+          <option value="">Échange : inchangé</option><option value="1">Échange accepté</option><option value="0">Échange refusé</option>
+        </select>
+        <button type="button" id="mySave" disabled>Enregistrer les prix</button>
+      </div>
+      <p class="xnote">Change un prix directement dans la liste, ou coche des annonces puis applique un prix ou un % de la cote, puis enregistre. Le site ne permet pas de modifier une annonce : elle est retirée puis remise en vente, donc elle perd son ancienneté et la taxe est de nouveau due. Les annonces qui ont déjà reçu des offres ne peuvent plus être retirées. Maj + clic sélectionne une plage.</p>
+      <p class="xnote" id="myMsg" role="status"></p>
+      <div class="glass panel" style="overflow-x:auto"><table class="envy"><thead><tr><th></th><th>Carte</th><th>Type</th><th class="num">Cote</th><th>Prix</th><th>Fin dans</th><th></th></tr></thead><tbody id="myBody"></tbody></table></div>
     </section>
     <section class="recy mkt" id="subMkFixed">
       <div>
@@ -2357,6 +2384,139 @@ $('slGo').onclick = async () => {
   loadMarket();
 };
 
+// ---- Marché > Mes annonces : retirer en masse, changer les prix à la volée ----
+// Le site n'a pas de modification : le serveur retire l'annonce puis la remet en vente (ancienneté perdue, taxe due de nouveau).
+let my = null, myBusy = false, myLast = null, myShown = [];
+const myPick = new Set(), myEdits = new Map(); // cochées ; id → nouveau prix en attente d'enregistrement
+const MY_HOURS = [24, 72, 168];
+const myLocked = l => l.bid != null || l.bids > 0; // des offres : le site refuse le retrait
+const myEditable = l => l.kind === 'fixe' && !myLocked(l);
+const myPrice = l => myEdits.get(l.id) ?? l.price;
+const myById = id => my.listings.find(l => l.id === id);
+function myList() {
+  const t = norm($('myQ').value.trim()), name = (a, b) => (a.card.name || '').localeCompare(b.card.name || '', 'fr');
+  const by = {end: (a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at), price: (a, b) => a.price - b.price, 'price-': (a, b) => b.price - a.price,
+    rar: (a, b) => (b.card.rarity ?? 0) - (a.card.rarity ?? 0) || name(a, b), name}[$('mySort').value];
+  return my.listings.filter(l => !t || norm(`${l.card.name} ${l.card.licence}`).includes(t)).sort(by);
+}
+function paintMy() {
+  if (!my) return;
+  myShown = myList();
+  $('myCount').textContent = `· ${my.listings.length} sur ${my.max}`;
+  const cks = [];
+  $('myBody').replaceChildren(...(myShown.length ? myShown.map((l, i) => {
+    const locked = myLocked(l), c = l.card;
+    const ck = el('input', {type: 'checkbox', checked: myPick.has(l.id), disabled: locked, onclick: e => {
+      const on = ck.checked;
+      for (const [x, k] of (e.shiftKey && myLast != null ? cks.slice(Math.min(myLast, i), Math.max(myLast, i) + 1) : [[l, ck]])) { if (!myLocked(x)) { k.checked = on; if (on) myPick.add(x.id); else myPick.delete(x.id); } }
+      myLast = i; paintMySum();
+    }});
+    ck.setAttribute('aria-label', `Cocher ${c.name || c.id}`);
+    if (locked) ck.title = 'Des offres ont déjà été faites : impossible de retirer cette annonce.';
+    cks.push([l, ck]);
+    const name = el('td', {}, el('b', {textContent: c.name || c.id}), el('br'), el('small', {textContent: `${RARITIES[c.rarity] ?? '?'} · ${c.licence || ''}`}));
+    name.style.borderLeft = `3px solid ${RCOL[c.rarity ?? 0]}`;
+    const tr = el('tr'), pct = el('small', {className: 'xnote'});
+    const save = el('button', {type: 'button', className: 'ghost', textContent: '✓', title: 'Enregistrer ce prix', hidden: true, onclick: () => mySave([l.id])});
+    save.setAttribute('aria-label', `Enregistrer le prix de ${c.name || c.id}`);
+    let px;
+    const sync = () => { // sans repeindre : le bouton cliqué juste après la saisie ne doit pas disparaître
+      const edited = myEdits.has(l.id);
+      tr.className = edited ? 'fresh' : ''; save.hidden = !edited;
+      pct.textContent = ` ${Math.round(myPrice(l) / l.value * 100)} % de la cote`;
+      paintMySum();
+    };
+    if (myEditable(l)) {
+      px = el('input', {type: 'number', min: 1, max: 1e7, value: myPrice(l), className: 'mksel', style: 'width:8em', onchange: () => {
+        const v = Math.floor(+px.value);
+        if (v >= 1 && v <= 1e7 && v !== l.price) myEdits.set(l.id, v); else myEdits.delete(l.id);
+        px.value = myPrice(l); sync();
+      }, onkeydown: e => { if (e.key === 'Enter') px.dispatchEvent(new Event('change')); else if (e.key === 'Escape') { myEdits.delete(l.id); px.value = l.price; sync(); } }});
+      px.setAttribute('aria-label', `Prix de ${c.name || c.id}`);
+    }
+    const left = Date.parse(l.ends_at) - Date.now();
+    const del = el('button', {type: 'button', className: 'ghost', textContent: '✕', title: 'Retirer cette annonce', disabled: locked, onclick: () => myCancel([l.id])});
+    del.setAttribute('aria-label', `Retirer ${c.name || c.id}`);
+    tr.append(el('td', {}, ck), name,
+      el('td', {textContent: `${l.kind === 'fixe' ? 'Prix fixe' : l.bid != null ? `Enchère · ${plural(l.bids, 'offre')}` : 'Enchère'}${l.trade ? ' · échange' : ''}`}),
+      el('td', {className: 'num', textContent: coins(l.value)}),
+      el('td', {}, ...(px ? [px, pct] : [el('span', {textContent: l.bid != null ? `${coins(l.bid)} (offre)` : coins(l.price)})])),
+      el('td', {textContent: left <= 0 ? 'terminée' : ago(left)}), el('td', {}, save, del));
+    sync();
+    return tr;
+  }) : [el('tr', {}, el('td', {colSpan: 7, className: 'xnote', textContent: my.listings.length ? 'Aucune annonce ne correspond.' : 'Aucune annonce en cours.'}))]));
+  paintMySum();
+}
+function paintMySum() {
+  const n = myPick.size, ed = myEdits.size, pickable = myShown.filter(l => !myLocked(l));
+  $('myDel').textContent = n ? `Retirer la sélection (${n})` : 'Retirer la sélection';
+  $('myDel').disabled = !n || myBusy;
+  $('mySave').textContent = ed ? `Enregistrer les prix (${ed})` : 'Enregistrer les prix';
+  $('mySave').disabled = !ed || myBusy;
+  $('myAll').checked = pickable.length > 0 && pickable.every(l => myPick.has(l.id));
+}
+async function loadMine() {
+  try {
+    my = await getJson('api/market/mine');
+    const ids = new Set(my.listings.map(l => l.id));
+    for (const id of [...myPick]) if (!ids.has(id)) myPick.delete(id);
+    for (const id of [...myEdits.keys()]) if (!ids.has(id)) myEdits.delete(id);
+    paintMy();
+  } catch (e) { $('myBody').replaceChildren(el('tr', {}, el('td', {colSpan: 7, className: 'xnote', textContent: e.message}))); }
+}
+// Une action : les annonces réussies disparaissent tout de suite, ce qui a échoué reste coché avec la raison.
+async function myRun(url, body, verb) {
+  myBusy = true; paintMySum();
+  const n = (body.ids || body.items).length;
+  $('myMsg').textContent = `${plural(n, 'annonce')} à traiter…`;
+  try {
+    const r = await post(url, body), gone = new Set([...r.done, ...r.failed.filter(f => f.cancelled).map(f => f.id)]);
+    for (const id of gone) { myPick.delete(id); myEdits.delete(id); }
+    my.listings = my.listings.filter(l => !gone.has(l.id));
+    const kept = r.failed.filter(f => !f.cancelled), lost = r.failed.filter(f => f.cancelled);
+    $('myMsg').textContent = [`${plural(r.done.length, 'annonce')} ${verb}${r.done.length > 1 ? 's' : ''}.`,
+      ...(kept.length ? [`${plural(kept.length, 'échec')} : ${kept[0].error}`] : []),
+      ...(lost.length ? [`Retirée mais pas remise en vente : ${lost[0].error} (la carte est dans ta collection, mets-la en vente depuis Vendre).`] : [])].join(' ');
+  } catch (e) { $('myMsg').textContent = e.message; }
+  myBusy = false; paintMy();
+  loadMine(); loadMarket(); // l'état réel du site, puis les pastilles
+}
+function myCancel(ids) {
+  if (!ids.length || !confirm(`Retirer ${plural(ids.length, 'annonce')} du marché ? Les cartes reviennent dans ta collection.`)) return;
+  myRun('api/market/cancel', {ids}, 'retirée');
+}
+function mySave(ids) {
+  const items = ids.filter(id => myEdits.has(id) && myById(id)).map(id => {
+    const l = myById(id), h = $('myHours').value ? +$('myHours').value : MY_HOURS.find(h => h * 36e5 >= Date.parse(l.ends_at) - Date.now()) ?? MY_HOURS.at(-1);
+    return {id, price: myEdits.get(id), hours: h, trade: $('myTrade').value ? $('myTrade').value === '1' : l.trade};
+  });
+  if (!items.length || !confirm(`Modifier ${plural(items.length, 'annonce')} ? Chacune est retirée puis remise en vente : elle perd son ancienneté et la taxe du marché est de nouveau due.`)) return;
+  myRun('api/market/edit', {items}, 'modifiée');
+}
+$('myFilters').oninput = () => { myLast = null; paintMy(); };
+$('myAll').onchange = () => { for (const l of myShown) if (!myLocked(l)) { if ($('myAll').checked) myPick.add(l.id); else myPick.delete(l.id); } paintMy(); };
+$('myDel').onclick = () => myCancel([...myPick]);
+$('mySave').onclick = () => mySave([...myEdits.keys()]);
+// Prix groupés : appliqués aux annonces à prix fixe cochées, enregistrés d'un coup ensuite.
+const myApply = price => {
+  const l = [...myPick].map(myById).filter(x => x && myEditable(x));
+  if (!l.length) { $('myMsg').textContent = 'Coche d\'abord des annonces à prix fixe.'; return; }
+  $('myMsg').textContent = '';
+  for (const x of l) { const v = Math.min(1e7, Math.max(1, Math.round(price(x)))); if (v !== x.price) myEdits.set(x.id, v); else myEdits.delete(x.id); }
+  paintMy();
+};
+$('myPxGo').onclick = () => {
+  const v = Math.floor(+$('myPx').value);
+  if (!(v >= 1 && v <= 1e7)) { $('myMsg').textContent = 'Prix entre 1 et 10 000 000 pièces.'; return; }
+  myApply(() => v);
+};
+$('myPctGo').onclick = () => {
+  const k = +$('myPct').value / 100;
+  if (!(k > 0)) { $('myMsg').textContent = 'Pourcentage invalide.'; return; }
+  myApply(x => x.value * k);
+};
+setInterval(() => { if (location.hash === '#marche-annonces' && !myBusy && !$('myBody').contains(document.activeElement)) loadMine(); }, 30000);
+
 // ---- Arcade > Cartodle : toutes les cartes, filtrées par les indices du jour ----
 let dle = null, dleEx = [];
 const DLE_SEL = {dleR: 'r', dleLic: 'lic', dleSer: 'ser', dleStyle: 'style', dleStudio: 'studio'};
@@ -2418,13 +2578,15 @@ $('dleFilters').oninput = $('dleFilters').onchange = renderDle;
 $('dleReset').onclick = () => { $('dleFilters').querySelectorAll('input,select').forEach(i => { i.value = ''; }); dleEx = []; renderDle(); };
 
 function showView() {
-  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#marche-vente': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
+  const views = {'#echanges': 'viewTrades', '#echanges-attente': 'viewTrades', '#echanges-historique': 'viewTrades', '#recyclage': 'viewRecycle', '#marche': 'viewMarket', '#marche-encheres': 'viewMarket', '#marche-vente': 'viewMarket', '#marche-annonces': 'viewMarket', '#stats': 'viewStats', '#stats-licences': 'viewStats', '#stats-doublons': 'viewStats', '#stats-manques': 'viewStats', '#arcade': 'viewArcade'}, view = views[location.hash] || 'viewBoosters';
   for (const id of ['viewBoosters', 'viewTrades', 'viewRecycle', 'viewMarket', 'viewStats', 'viewArcade']) $(id).hidden = id !== view;
   if (view === 'viewMarket') { mkNewSince ??= mkSeenAt; loadMarket(); } else mkNewSince = null; // nouveaux achats surlignés pendant la visite
   paintMkBadge();
   $('subMkFixed').hidden = location.hash !== '#marche';
   $('subMkSell').hidden = location.hash !== '#marche-vente';
   if (location.hash === '#marche-vente') loadSell();
+  $('subMkMine').hidden = location.hash !== '#marche-annonces';
+  if (location.hash === '#marche-annonces') loadMine();
   $('subMkAuctions').hidden = location.hash !== '#marche-encheres';
   $('subStatsPlayers').hidden = location.hash !== '#stats';
   $('subStatsLicences').hidden = location.hash !== '#stats-licences';

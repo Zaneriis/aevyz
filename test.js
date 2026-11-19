@@ -69,7 +69,22 @@ const fake = http.createServer((req, res) => {
       { id: 2, mine: false, status: 'attente', from: 'lui', from_name: 'Lui', give: ['br0'], get: ['ar1', 'bc1'], message: 'Salut' }, // reçu : je recevrais br0, je donnerais ar1 et bc1
       { id: 3, mine: true, status: 'refusee', give: ['ar0'], get: ['br1'] }, // terminé : ne compte plus
       { id: 4, mine: false, status: 'attente', from: 'prive', from_name: 'Privé', give: ['bc0'], get: [], get_coins: 40 }, // reçu : me coûterait 40 pièces
-    ] });
+    ], mine: game.mine || [] });
+    if (p === '/rest/v1/rpc/market_cancel') {
+      const { p_id } = JSON.parse(body), l = (game.mine || []).find(x => x.id === p_id && x.status === 'active');
+      (game.cancelCalls ||= []).push(p_id);
+      if (!l) return json({ message: 'Annonce introuvable' }, 400);
+      if (l.bid != null) return json({ message: "Il y a déjà des offres : impossible d'annuler" }, 400);
+      l.status = 'annulee';
+      return json({});
+    }
+    if (p === '/rest/v1/rpc/market_sell') {
+      const a = JSON.parse(body);
+      (game.sellCalls ||= []).push(a);
+      if (game.sellRefusal) return json({ message: game.sellRefusal }, 400);
+      (game.mine ||= []).push({ id: 100 + game.sellCalls.length, card: a.p_card, kind: a.p_kind, price: a.p_price, bid: null, bids: 0, status: 'active', ends_at: iso(-a.p_hours * 36e5), trade: a.p_trade });
+      return json(100 + game.sellCalls.length);
+    }
     if (p === '/rest/v1/rpc/leaderboard') {
       // Classement trié comme demandé : la position dépend du critère.
       const key = { uniq: 'uniq', total: 'total', opened: 'opened', myth: 'mythics' }[JSON.parse(body).p_sort];
@@ -656,6 +671,47 @@ const start = async () => {
   await post('/api/snipes', { id: 20, max: null });
   assert.ok(!(await (await api('/api/market')).json()).snipes.some(s => s.id === 20), 'enchère effacée');
   game.listings = [];
+
+  // Marché > Mes annonces : liste, retrait en masse (une annonce avec offres refusée sans bloquer les autres), modification = retrait puis remise en vente.
+  const ends = h => iso(-h * 36e5);
+  game.mine = [
+    { id: 31, card: 'bc0', kind: 'fixe', price: 20, bid: null, bids: 0, status: 'active', ends_at: ends(5), trade: true },
+    { id: 32, card: 'br0', kind: 'fixe', price: 90, bid: null, bids: 0, status: 'active', ends_at: ends(60), trade: false },
+    { id: 33, card: 'c2', kind: 'enchere', price: 10, bid: 15, bids: 2, status: 'active', ends_at: ends(2), trade: false },
+    { id: 34, card: 'c1', kind: 'fixe', price: 5, bid: null, bids: 0, status: 'vendue', ends_at: ends(-3), trade: false },
+    { id: 35, card: 'ac0', kind: 'fixe', price: 7, bid: null, bids: 0, status: 'active', ends_at: ends(100), trade: false },
+  ];
+  const mineList = await (await api('/api/market/mine')).json();
+  assert.strictEqual(mineList.max, 50);
+  assert.deepStrictEqual(mineList.listings.map(l => l.id), [31, 32, 33, 35], 'seulement les annonces actives');
+  assert.deepStrictEqual([mineList.listings[0].value, mineList.listings[0].card.licence, mineList.listings[0].trade, mineList.listings[2].bids], [12, 'Beta', true, 2], 'cote et carte jointes');
+  assert.strictEqual((await post('/api/market/cancel', { ids: [] })).status, 400, 'rien à retirer');
+  assert.strictEqual((await post('/api/market/cancel', { ids: [31, 31] })).status, 400, 'doublon refusé');
+  assert.strictEqual((await post('/api/market/cancel', { ids: [{}] })).status, 400, 'identifiant invalide');
+  assert.strictEqual((await post('/api/market/cancel', { ids: Array.from({ length: 51 }, (_, i) => i + 1) })).status, 400, 'plus de 50');
+  game.cancelCalls = [];
+  const cancelled = await (await post('/api/market/cancel', { ids: [33, 31, 35] })).json();
+  assert.deepStrictEqual(cancelled.done, [31, 35], 'les autres partent malgré le refus');
+  assert.deepStrictEqual(cancelled.failed.map(f => f.id), [33]);
+  assert.match(cancelled.failed[0].error, /offres/);
+  assert.deepStrictEqual(game.cancelCalls, [33, 31, 35], 'une annulation par annonce');
+  assert.deepStrictEqual((await (await api('/api/market/mine')).json()).listings.map(l => l.id), [32, 33], 'liste relue sans cache');
+
+  const goodEdit = { id: 32, price: 60, hours: 72, trade: true };
+  for (const bad of [{ ...goodEdit, price: 0 }, { ...goodEdit, price: 1.5 }, { ...goodEdit, price: 1e7 + 1 }, { ...goodEdit, hours: 5 }, { ...goodEdit, id: '' }, null])
+    assert.strictEqual((await post('/api/market/edit', { items: [bad] })).status, 400, 'modification invalide : ' + JSON.stringify(bad));
+  assert.strictEqual((await post('/api/market/edit', { items: [] })).status, 400);
+  game.sellCalls = []; game.cancelCalls = [];
+  const edited = await (await post('/api/market/edit', { items: [{ id: 99, price: 5, hours: 24, trade: false }, { id: 33, price: 5, hours: 24, trade: false }, goodEdit] })).json();
+  assert.deepStrictEqual(edited.done, [32]);
+  assert.deepStrictEqual(edited.failed.map(f => f.id), [99, 33], 'annonce inconnue et enchère refusées sans rien appeler');
+  assert.deepStrictEqual(game.cancelCalls, [32], 'seule la bonne annonce est retirée');
+  assert.deepStrictEqual(game.sellCalls, [{ p_card: 'br0', p_kind: 'fixe', p_price: 60, p_hours: 72, p_trade: true, p_criee: false, p_salon: 's1' }], 'remise en vente de la même carte au nouveau prix');
+  assert.deepStrictEqual((await (await api('/api/market/mine')).json()).listings.map(l => [l.card.id, l.price]).sort(), [['br0', 60], ['c2', 10]]);
+  game.sellRefusal = '50 annonces en cours au maximum';
+  const lost = await (await post('/api/market/edit', { items: [{ id: 101, price: 8, hours: 24, trade: false }] })).json();
+  assert.deepStrictEqual([lost.done, lost.failed[0].cancelled, lost.failed[0].error], [[], true, game.sellRefusal], 'retirée mais pas remise en vente : signalé');
+  game.sellRefusal = null; game.mine = []; game.sellCalls = []; game.cancelCalls = [];
 
   // Connexion Discord (PKCE) : redirection vers Supabase, puis code collé ou renvoyé sur la surcouche, utilisable une seule fois.
   assert.strictEqual((await api('/api/login?back=javascript:alert(1)')).status, 400);

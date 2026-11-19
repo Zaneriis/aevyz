@@ -956,6 +956,7 @@ async function sellable() {
   return { room: Math.max(0, SELL_MAX - m.listed), cards,
     players: db.prepare('SELECT id, name FROM players WHERE id != ? ORDER BY name').all(kvGet('session')?.user_id || '').map(p => [p.id, p.name]) };
 }
+const sellOne = (card, price, hours, trade) => sb('/rest/v1/rpc/market_sell', { method: 'POST', body: { p_card: card, p_kind: 'fixe', p_price: price, p_hours: hours, p_trade: trade === true, p_criee: false, p_salon: 's1' } });
 async function sellCards({ items, hours, trade }) {
   if (!SELL_HOURS.includes(hours)) return [400, { error: 'Durée invalide.' }];
   if (!Array.isArray(items) || !items.length || items.length > SELL_MAX
@@ -963,12 +964,57 @@ async function sellCards({ items, hours, trade }) {
     return [400, { error: `De 1 à ${SELL_MAX} annonces, à un prix entier de 1 à 10 000 000 pièces.` }];
   let ok = 0, error = null;
   for (const { id, price } of items) { // une à une : la première erreur (plus d'exemplaire, limite d'annonces…) arrête la suite
-    try { await sb('/rest/v1/rpc/market_sell', { method: 'POST', body: { p_card: id, p_kind: 'fixe', p_price: price, p_hours: hours, p_trade: trade === true, p_criee: false, p_salon: 's1' } }); ok++; }
+    try { await sellOne(id, price, hours, trade); ok++; }
     catch (e) { error = e.message; break; }
   }
   mineCache = null; market.at = 0;
   if (ok) log(`Marché : ${ok} annonce${ok > 1 ? 's' : ''} mise${ok > 1 ? 's' : ''} en vente`);
   return [200, { ok, error }];
+}
+
+// Marché > Mes annonces : mes annonces à prix fixe ou en enchère encore actives, retirables en masse.
+// Le site n'a pas de modification : modifier = market_cancel puis market_sell (ancienneté perdue, taxe due de nouveau).
+const myActive = async () => ((await sb('/rest/v1/rpc/market_me', { method: 'POST', body: {} }))?.mine || []).filter(l => l.status === 'active');
+async function myListings() {
+  const [mine, k] = await Promise.all([myActive(), cotes()]), catalog = catalogMap();
+  return { max: SELL_MAX, listings: mine.map(l => {
+    const c = catalog.get(l.card);
+    return { id: l.id, kind: l.kind, price: l.price, bid: l.bid ?? null, bids: l.bids || 0, ends_at: l.ends_at, trade: l.trade === true,
+      card: { id: l.card, ...c }, value: k[l.card]?.[0] || BASE_VALUE[c?.rarity] || BASE_VALUE[0] };
+  }) };
+}
+const listingIds = ids => Array.isArray(ids) && ids.length >= 1 && ids.length <= SELL_MAX && new Set(ids).size === ids.length
+  && ids.every(i => Number.isInteger(i) || (typeof i === 'string' && i));
+const afterListingChange = () => { mineCache = null; market.at = 0; };
+// Chaque annonce est traitée à part : une annonce qui a déjà reçu des offres refuse l'annulation sans empêcher les autres.
+async function cancelListings({ ids }) {
+  if (!listingIds(ids)) return [400, { error: `De 1 à ${SELL_MAX} annonces à retirer.` }];
+  const done = [], failed = [];
+  for (const id of ids) {
+    try { await sb('/rest/v1/rpc/market_cancel', { method: 'POST', body: { p_id: id } }); done.push(id); }
+    catch (e) { failed.push({ id, error: e.message }); }
+  }
+  afterListingChange();
+  if (done.length) log(`Marché : ${done.length} annonce${done.length > 1 ? 's' : ''} retirée${done.length > 1 ? 's' : ''}`);
+  return [200, { done, failed }];
+}
+async function editListings({ items }) {
+  if (!Array.isArray(items) || !items.length || items.length > SELL_MAX || !listingIds(items.map(x => x?.id))
+    || !items.every(x => Number.isInteger(x.price) && x.price >= 1 && x.price <= 1e7 && SELL_HOURS.includes(x.hours)))
+    return [400, { error: `De 1 à ${SELL_MAX} annonces, à un prix entier de 1 à 10 000 000 pièces et une durée de 1, 3 ou 7 jours.` }];
+  const mine = new Map((await myActive()).map(l => [l.id, l])), done = [], failed = [];
+  for (const { id, price, hours, trade } of items) {
+    const l = mine.get(id);
+    if (!l) { failed.push({ id, error: 'Annonce introuvable ou déjà terminée.' }); continue; }
+    if (l.kind !== 'fixe') { failed.push({ id, error: 'Seules les annonces à prix fixe se modifient.' }); continue; }
+    try { await sb('/rest/v1/rpc/market_cancel', { method: 'POST', body: { p_id: id } }); }
+    catch (e) { failed.push({ id, error: e.message }); continue; }
+    try { await sellOne(l.card, price, hours, trade); done.push(id); }
+    catch (e) { failed.push({ id, error: e.message, cancelled: true }); break; } // annulée mais pas remise en vente : la suite échouerait sans doute aussi
+  }
+  afterListingChange();
+  if (done.length) log(`Marché : ${done.length} annonce${done.length > 1 ? 's' : ''} modifiée${done.length > 1 ? 's' : ''}`);
+  return [200, { done, failed }];
 }
 
 async function marketState() {
@@ -1060,6 +1106,7 @@ const server = http.createServer(async (req, res) => {
       return send(...missingFor(ref, url.searchParams.get('dupes') === '1', asked));
     }
     if (req.method === 'GET' && url.pathname === '/api/market/sellable') return send(200, await sellable());
+    if (req.method === 'GET' && url.pathname === '/api/market/mine') return send(200, await myListings());
     if (req.method === 'GET' && url.pathname === '/api/arcade/cartodle') return send(200, await cartodleCards());
     if (req.method === 'GET' && url.pathname === '/api/notifications')
       return send(200, await sb('/rest/v1/notifications?select=id,kind,title,body,link,read_at,created_at&order=created_at.desc&limit=40'));
@@ -1106,6 +1153,8 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/pending/respond') return send(...await respondTrade(body));
       if (url.pathname === '/api/recycle') return send(...await startRecycle(body));
       if (url.pathname === '/api/market/sell') return send(...await sellCards(body));
+      if (url.pathname === '/api/market/cancel') return send(...await cancelListings(body));
+      if (url.pathname === '/api/market/edit') return send(...await editListings(body));
       if (url.pathname === '/api/routines') return send(...saveRoutines(body.routines));
       if (url.pathname === '/api/snipes') return send(...await saveSnipe(body));
       if (url.pathname === '/api/stats/refresh') return send(...await refreshPlayer(body));
