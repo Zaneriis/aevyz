@@ -841,8 +841,6 @@ async function boostCoins() { // barème du site gardé 10 min ; au tout premier
   }
   return goldCache;
 }
-  return goldCache;
-}
 // Un groupe découpé en plusieurs échanges ne touche le bonus que complet : on ne rend un morceau que si tout son groupe est accepté.
 function boostReturnable(bal, rows, catalog) {
   const accepted = new Set(rows.filter(r => r.dir === 'out' && r.status === 'acceptee').flatMap(r => r.cards));
