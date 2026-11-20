@@ -2631,7 +2631,7 @@ function renderBoost(d) {
       el('button', {type: 'button', textContent: 'Demander le retour', disabled: full, onclick: e => { e.preventDefault(); boostSend({kind: 'back', parent: b.id}, e.target); }})),
     boostCards(b.cards)));
   const outs = d.outs.map(o => el('details', {className: 'bx'},
-    el('summary', {}, el('b', {textContent: `Envoi de ${plural(o.cards.length, 'carte')}`}), boostGroups(o.groups),
+    el('summary', {}, el('b', {textContent: `Envoi de ${plural(o.cards.length, 'carte')}`}), boostGroups(o.groups), ...(o.gain ? [el('span', {className: 'bst ok', textContent: `+${o.gain.toLocaleString('fr-FR')} or`})] : []),
       el('button', {type: 'button', textContent: 'Envoyer', onclick: e => { e.preventDefault(); boostSend({kind: 'out', cards: o.cards.map(c => c.id)}, e.target); }})),
     boostCards(o.cards)));
   const sk = d.skipped, notes = [sk.missing && `${plural(sk.missing, 'groupe')} incomplet${sk.missing > 1 ? 's' : ''} chez toi (il te manque des cartes)`, sk.busy && `${plural(sk.busy, 'groupe')} avec des cartes déjà engagées dans un échange en attente`, sk.done && `${sk.done} déjà envoyé${sk.done > 1 ? 's' : ''}`].filter(Boolean);
@@ -2641,11 +2641,13 @@ function renderBoost(d) {
     boostCards(h.cards)));
   box.replaceChildren(
     el('div', {className: 'xhead'}, el('h2', {textContent: `Boost · ${d.name || 'joueur'}`}), el('button', {type: 'button', className: 'ghost', textContent: 'Actualiser', onclick: () => loadBoost(true)})),
-    el('p', {className: 'xnote', textContent: `Chaque envoi donne 1 exemplaire de chaque carte d'un groupe licence × rareté, contre ${d.coin} pièce ; le retour fait l'inverse. Les Mythiques Alternatives sont exclues. Je ne lis pas sa collection. Rien ne part sans ton clic.`}),
+    el('p', {className: 'xnote', textContent: `Chaque envoi donne 1 exemplaire de chaque carte d'un groupe licence × rareté, contre ${d.coin} pièce ; le retour fait l'inverse. Les Mythiques Alternatives sont exclues. L'or affiché est un maximum : un montant fixe par groupe complet, une seule fois, sans savoir ce qu'il a déjà récupéré. Je ne lis pas sa collection. Rien ne part sans ton clic.`}),
     ...(boostNote ? [el('p', {className: 'xsent', role: 'status', textContent: boostNote})] : []),
     el('div', {className: 'boost'},
       el('div', {className: 'bset'}, el('label', {}, 'Limite de cartes chez lui ', cap), saveCap),
-      el('div', {className: 'bstats'}, stat('Chez lui', d.atHim), stat('Envois en attente', d.pendingOut), stat('Place restante', d.room), stat('Échanges libres', `${d.slots}/20`)),
+      el('div', {className: 'bstats'}, stat('Chez lui', d.atHim), stat('Envois en attente', d.pendingOut), stat('Place restante', d.room), stat('Échanges libres', `${d.slots}/20`), stat('Or visé par les envois déjà faits', `${d.gold.pending.toLocaleString('fr-FR')} or`), stat('Or espéré avec les envois proposés', `${d.gold.planned.toLocaleString('fr-FR')} or`)),
+      ...(d.gold.fallback ? [el('p', {className: 'xnote', textContent: 'Barème du site indisponible : l\'or est calculé avec les valeurs par défaut (10, 15, 25, 40, 75).'})] : []),
+      ...(d.gold.enabled === false ? [el('p', {className: 'xnote', textContent: 'Les séries par rareté ne sont pas encore activées sur le site : l\'or indiqué est une estimation.'})] : []),
       el('section', {}, el('h3', {textContent: `Retours à demander · ${d.waitingBacks}`}), ...(backs.length ? backs : [el('p', {className: 'xnote', textContent: 'Aucun retour à demander pour le moment.'})]),
         ...(d.heldBacks ? [el('p', {className: 'xnote', textContent: `${plural(d.heldBacks, 'retour')} en attente : un groupe découpé ne touche le bonus que quand tous ses échanges sont acceptés.`})] : []),
         ...(d.waitingBacks > d.backs.length ? [el('p', {className: 'xnote', textContent: `${d.waitingBacks - d.backs.length} autre(s) retour(s) quand des échanges se libèrent.`})] : [])),
