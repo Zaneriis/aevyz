@@ -197,7 +197,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .boost details.bx .tgrid{margin:12px 0}
 .boost .bgroups{display:flex;flex-wrap:wrap;gap:6px}
 .boost .bgroups span,.boost .bst{font-size:.78rem;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
-.boost .bst.ok{color:#7be08f}.boost .bst.ko{color:#ff8a8a}
+.boost details.bx.early{border-color:#e0a050}.boost .bst.warn{color:#e0a050;border-color:#e0a050}.boost .bst.ok{color:#7be08f}.boost .bst.ko{color:#ff8a8a}
 .xnote{color:var(--muted);font-size:.92rem;margin:0 0 14px}
 .xblock{padding:14px;margin-bottom:14px}
 .xblock h3{margin-bottom:10px}
@@ -2630,8 +2630,16 @@ function renderBoost(d) {
     el('summary', {}, el('b', {textContent: `Retour de ${plural(b.cards.length, 'carte')}`}), el('small', {className: 'xnote', style: 'margin:0', textContent: b.accepted_at ? `accepté ${time(b.accepted_at)}` : ''}),
       el('button', {type: 'button', textContent: 'Demander le retour', disabled: full, onclick: e => { e.preventDefault(); boostSend({kind: 'back', parent: b.id}, e.target); }})),
     boostCards(b.cards)));
+  const early = (d.earlyBacks || []).map(b => el('details', {className: 'bx early'},
+    el('summary', {}, el('b', {textContent: `Retour anticipé de ${plural(b.cards.length, 'carte')}`}), el('span', {className: 'bst warn', textContent: 'licence incomplète'}),
+      el('button', {type: 'button', className: 'ghost', textContent: 'Demander le retour quand même', disabled: full, onclick: e => {
+        e.preventDefault();
+        if (!confirm('La licence de ces cartes n\'est pas encore complète chez lui. Récupérer ces cartes maintenant peut te faire perdre le bonus de fin de licence (5 pièces par carte de la licence). Demander le retour quand même ?')) return;
+        boostSend({kind: 'back', parent: b.id, confirmEarly: true}, e.target);
+      }})),
+    boostCards(b.cards)));
   const outs = d.outs.map(o => el('details', {className: 'bx'},
-    el('summary', {}, el('b', {textContent: `Envoi de ${plural(o.cards.length, 'carte')}`}), boostGroups(o.groups), ...(o.gain ? [el('span', {className: 'bst ok', textContent: `+${o.gain.toLocaleString('fr-FR')} or`})] : []),
+    el('summary', {}, el('b', {textContent: `Envoi de ${plural(o.cards.length, 'carte')}`}), boostGroups(o.groups), ...(o.gain ? [el('span', {className: 'bst ok', textContent: `+${o.gain.toLocaleString('fr-FR')} or`})] : []), ...(o.licenceGain ? [el('span', {className: 'bst ok', textContent: `dont licence complète +${o.licenceGain.toLocaleString('fr-FR')}`})] : []),
       el('button', {type: 'button', textContent: 'Envoyer', onclick: e => { e.preventDefault(); boostSend({kind: 'out', cards: o.cards.map(c => c.id)}, e.target); }})),
     boostCards(o.cards)));
   const sk = d.skipped, notes = [sk.missing && `${plural(sk.missing, 'groupe')} incomplet${sk.missing > 1 ? 's' : ''} chez toi (il te manque des cartes)`, sk.busy && `${plural(sk.busy, 'groupe')} avec des cartes déjà engagées dans un échange en attente`, sk.done && `${sk.done} déjà envoyé${sk.done > 1 ? 's' : ''}`].filter(Boolean);
@@ -2641,7 +2649,7 @@ function renderBoost(d) {
     boostCards(h.cards)));
   box.replaceChildren(
     el('div', {className: 'xhead'}, el('h2', {textContent: `Boost · ${d.name || 'joueur'}`}), el('button', {type: 'button', className: 'ghost', textContent: 'Actualiser', onclick: () => loadBoost(true)})),
-    el('p', {className: 'xnote', textContent: `Chaque envoi donne 1 exemplaire de chaque carte d'un groupe licence × rareté, contre ${d.coin} pièce ; le retour fait l'inverse. Les Mythiques Alternatives sont exclues. L'or est un montant fixe par groupe complété, une seule fois. Sa collection est scannée à chaque actualisation : les groupes qu'il a déjà complets ne sont pas envoyés et ne comptent pas dans l'or. Rien ne part sans ton clic.`}),
+    el('p', {className: 'xnote', textContent: `Chaque envoi donne 1 exemplaire de chaque carte d'un groupe licence × rareté, contre ${d.coin} pièce ; le retour fait l'inverse. Les Mythiques Alternatives sont exclues. L'or est un montant fixe par groupe complété, une seule fois, plus ${d.gold.licence.perCard} pièces par carte de la licence quand il la complète. Les cartes d'une même licence sont envoyées côte à côte, et leur retour n'est proposé qu'une fois la licence complète (sinon : retour anticipé, en orange, avec confirmation). Sa collection est scannée à chaque actualisation : les groupes qu'il a déjà complets ne sont pas envoyés et ne comptent pas dans l'or. Rien ne part sans ton clic.`}),
     ...(boostNote ? [el('p', {className: 'xsent', role: 'status', textContent: boostNote})] : []),
     el('div', {className: 'boost'},
       el('div', {className: 'bset'}, el('label', {}, 'Limite de cartes chez lui ', cap), saveCap),
@@ -2652,6 +2660,7 @@ function renderBoost(d) {
       el('section', {}, el('h3', {textContent: `Retours à demander · ${d.waitingBacks}`}), ...(backs.length ? backs : [el('p', {className: 'xnote', textContent: 'Aucun retour à demander pour le moment.'})]),
         ...(d.heldBacks ? [el('p', {className: 'xnote', textContent: `${plural(d.heldBacks, 'retour')} en attente : un groupe découpé ne touche le bonus que quand tous ses échanges sont acceptés.`})] : []),
         ...(d.waitingBacks > d.backs.length ? [el('p', {className: 'xnote', textContent: `${d.waitingBacks - d.backs.length} autre(s) retour(s) quand des échanges se libèrent.`})] : [])),
+      ...(early.length ? [el('section', {}, el('h3', {textContent: `Retours anticipés · ${early.length}`}), el('p', {className: 'xnote', textContent: 'La licence n\'est pas encore complète chez lui : récupérer ces cartes maintenant peut faire perdre le bonus de licence.'}), ...early)] : []),
       el('section', {}, el('h3', {textContent: `Prochains envois · ${d.outs.length}`}),
         ...(outs.length ? outs : [el('p', {className: 'xnote', textContent: d.waitingBacks ? 'Récupère d\'abord les retours.' : d.room < 1 ? 'Limite de cartes chez lui atteinte : attends les retours.' : full ? 'Aucun échange libre.' : 'Rien à envoyer pour le moment.'})]),
         ...(d.left > 0 ? [el('p', {className: 'xnote', textContent: `${plural(d.left, 'échange')} de plus à prévoir ensuite.`})] : []),

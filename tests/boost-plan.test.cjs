@@ -6,8 +6,8 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance; this.boostOutGain = boostOutGain; this.boostCoveredGain = boostCoveredGain; this.boostDone = boostDone;', ctx);
-const { boostPlan, boostBalance, boostOutGain, boostCoveredGain, boostDone } = ctx;
+vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance; this.boostOutGain = boostOutGain; this.boostCoveredGain = boostCoveredGain; this.boostDone = boostDone; this.boostLicenceGain = boostLicenceGain; this.boostSplitBacks = boostSplitBacks;', ctx);
+const { boostPlan, boostBalance, boostOutGain, boostCoveredGain, boostDone, boostLicenceGain, boostSplitBacks } = ctx;
 
 const mk = (licence, rarity, n) => Array.from({ length: n }, (_, i) => ({ id: `${licence}${rarity}-${i}`, name: 'x', licence, rarity }));
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -109,4 +109,35 @@ test('groupe complété chez lui grâce à nos envois : toujours compté dans l\
   assert.equal(hisDone.size, 0);
   assert.equal(boostCoveredGain(cat.filter(c => !hisDone.has(c.id)), covered, [10, 15, 25, 40, 75]), 10);
   assert.equal(boostDone(cat, { 'A0-0': 1, 'A0-1': 1 }).size, 2);
+});
+
+test('bonus de licence : 5 pièces par carte, seulement une fois la licence entière chez lui ou couverte', () => {
+  const cat = [...mk('A', 0, 3), ...mk('A', 1, 2), ...mk('B', 0, 2)];
+  const ids5 = cat.filter(c => c.licence === 'A').map(c => c.id);
+  assert.equal(boostLicenceGain(cat, new Set(ids5)).gold, 25);
+  assert.equal(boostLicenceGain(cat, new Set(ids5.slice(1))).gold, 0);
+  // une carte déjà chez lui complète la licence avec nos envois
+  assert.equal(boostLicenceGain(cat, new Set(ids5.slice(1)), { [ids5[0]]: 1 }).gold, 25);
+  // déjà complète chez lui avant nous : rien
+  assert.equal(boostLicenceGain(cat, new Set(), Object.fromEntries(ids5.map(i => [i, 1]))).gold, 0);
+});
+
+test('les envois d\'une même licence sont regroupés, licences bouclables en premier', () => {
+  const cat = [...mk('A', 0, 12), ...mk('B', 0, 12), ...mk('A', 1, 12), ...mk('B', 1, 12), ...mk('C', 0, 3)];
+  const owned = own(cat); cat.filter(c => c.licence === 'C').forEach(c => owned.delete(c.id));
+  const r = boostPlan({ ...base(cat), owned });
+  const lics = r.outs.map(o => [...new Set(o.groups.map(g => g.licence))]);
+  assert.deepEqual(plain(lics), [['A'], ['A'], ['B'], ['B']].map((l, i) => i < 2 ? ['A'] : ['B']));
+  assert.equal(r.outs.length, 4);
+});
+
+test('retours : pas avant la licence complète, sinon retour anticipé', () => {
+  const cat = [...mk('A', 0, 2), ...mk('A', 1, 1)];
+  const map = new Map(cat.map(c => [c.id, c]));
+  const back = [{ id: 1, cards: ['A0-0', 'A0-1'] }];
+  const partial = boostSplitBacks(back, map, new Set(['A0-0', 'A0-1']));
+  assert.equal(partial.ready.length, 0); assert.equal(partial.early.length, 1);
+  const full = boostSplitBacks(back, map, new Set(['A0-0', 'A0-1', 'A1-0']));
+  assert.equal(full.ready.length, 1);
+  assert.equal(boostSplitBacks(back, map, new Set(['A0-0', 'A0-1']), { 'A1-0': 1 }).ready.length, 1);
 });
