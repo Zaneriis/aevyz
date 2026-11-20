@@ -6,8 +6,8 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance; this.boostOutGain = boostOutGain; this.boostCoveredGain = boostCoveredGain;', ctx);
-const { boostPlan, boostBalance, boostOutGain, boostCoveredGain } = ctx;
+vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance; this.boostOutGain = boostOutGain; this.boostCoveredGain = boostCoveredGain; this.boostDone = boostDone;', ctx);
+const { boostPlan, boostBalance, boostOutGain, boostCoveredGain, boostDone } = ctx;
 
 const mk = (licence, rarity, n) => Array.from({ length: n }, (_, i) => ({ id: `${licence}${rarity}-${i}`, name: 'x', licence, rarity }));
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -38,7 +38,7 @@ test('groupe incomplet, engagé ou déjà envoyé : écarté', () => {
   const owned = own(cat); owned.delete('A0-1');
   const r = boostPlan({ ...base(cat), owned, busy: new Set(['B0-0']), covered: new Set(['C0-0', 'C0-1', 'C0-2']) });
   assert.deepEqual(plain(r.outs.flatMap(ids)), ['D0-0', 'D0-1']);
-  assert.deepEqual(plain(r.skipped), { done: 1, missing: 1, busy: 1 });
+  assert.deepEqual(plain(r.skipped), { done: 1, missing: 1, busy: 1, his: 0 });
 });
 
 test('la limite de cartes chez lui et les emplacements plafonnent les envois', () => {
@@ -80,4 +80,33 @@ test('or espéré : un envoi qui complète un groupe en partie déjà envoyé es
   const cat = mk('A', 0, 25);
   const r = boostPlan({ ...base(cat), covered: new Set(cat.slice(0, 20).map(c => c.id)) });
   assert.equal(boostOutGain(r.outs[0].groups, [10]), 10);
+});
+
+test('groupe déjà complet chez lui : jamais envoyé, groupe partiel envoyé en entier', () => {
+  const cat = [...mk('A', 0, 3), ...mk('B', 0, 3)];
+  const his = { 'A0-0': 1, 'A0-1': 2, 'A0-2': 1, 'B0-0': 1 };
+  const hisDone = boostDone(cat, his);
+  assert.deepEqual(plain([...hisDone].sort()), ['A0-0', 'A0-1', 'A0-2']);
+  const r = boostPlan({ ...base(cat), hisDone });
+  assert.deepEqual(plain(r.outs.flatMap(ids)), ['B0-0', 'B0-1', 'B0-2']);
+  assert.equal(r.skipped.his, 1);
+});
+
+test('or espéré : les groupes déjà complets chez lui ne rapportent rien', () => {
+  const cat = [...mk('A', 0, 2), ...mk('B', 1, 2)];
+  const hisDone = boostDone(cat, { 'A0-0': 1, 'A0-1': 1 });
+  const goldCards = cat.filter(c => !hisDone.has(c.id));
+  const coins = [10, 15, 25, 40, 75];
+  const every = boostPlan({ ...base(cat), hisDone, room: Infinity, slots: Infinity });
+  assert.equal(boostCoveredGain(goldCards, new Set(every.outs.flatMap(o => o.cards.map(c => c.id))), coins), 15);
+  assert.equal(boostCoveredGain(goldCards, new Set(), coins), 0);
+});
+
+test('groupe complété chez lui grâce à nos envois : toujours compté dans l\'or', () => {
+  const cat = mk('A', 0, 2);
+  const covered = new Set(['A0-0', 'A0-1']);
+  const hisDone = boostDone(cat, { 'A0-0': 1, 'A0-1': 1 }, covered);
+  assert.equal(hisDone.size, 0);
+  assert.equal(boostCoveredGain(cat.filter(c => !hisDone.has(c.id)), covered, [10, 15, 25, 40, 75]), 10);
+  assert.equal(boostDone(cat, { 'A0-0': 1, 'A0-1': 1 }).size, 2);
 });
