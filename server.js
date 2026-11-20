@@ -757,7 +757,7 @@ let boostBusy = false;
 // BOOST-START
 // Regroupe les cartes restantes par (licence, rareté), écarte les groupes que je ne peux pas envoyer en entier, puis les range
 // dans le moins d'échanges possible (premier ajustement décroissant). Les Mythiques Alternatives (rareté 6) sont exclues.
-function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20, hisDone = new Set() }) {
+function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20, hisDone = new Set(), his = {} }) {
   const groups = new Map();
   for (const c of catalog) {
     if (c.rarity == null || c.rarity > 5 || !c.licence) continue;
@@ -774,15 +774,22 @@ function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20, hisDo
     if (rest.some(c => !(owned.get(c.id) > 0))) { skipped.missing++; continue; }
     for (let i = 0; i < rest.length; i += max) pieces.push({ licence: g.licence, rarity: g.rarity, total: g.cards.length, rest: rest.length, cards: rest.slice(i, i + max) });
   }
-  pieces.sort((a, b) => b.cards.length - a.cards.length || b.rarity - a.rarity || (a.licence < b.licence ? -1 : 1));
+  // Licences qu'on peut boucler : chaque carte est déjà chez lui, déjà engagée ou envoyée dans ce plan. Elles passent en premier et leurs envois sont
+  // rangés côte à côte, pour que la licence soit complète vite et que les retours reviennent sans bloquer le stock de cartes.
+  const sending = new Set(pieces.flatMap(p => p.cards.map(c => c.id))), open = new Set();
+  for (const c of catalog) if (c.licence && c.rarity != null && c.rarity <= 5 && !(covered.has(c.id) || his[c.id] > 0 || hisDone.has(c.id) || sending.has(c.id))) open.add(c.licence);
+  const closable = new Set(pieces.filter(p => !open.has(p.licence)).map(p => p.licence));
+  const rank = p => (closable.has(p.licence) ? 0 : 1);
+  pieces.sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 ? (a.licence < b.licence ? -1 : a.licence > b.licence ? 1 : 0) : 0) || b.cards.length - a.cards.length || b.rarity - a.rarity || (a.licence < b.licence ? -1 : 1));
   const bins = [];
   for (const p of pieces) {
     let bin = bins.find(b => b.cards.length + p.cards.length <= max);
-    if (!bin) bins.push(bin = { cards: [], groups: [] });
+    if (!bin) bins.push(bin = { cards: [], groups: [], rank: rank(p), order: bins.length });
     bin.cards.push(...p.cards);
+    bin.rank = Math.min(bin.rank, rank(p));
     bin.groups.push({ licence: p.licence, rarity: p.rarity, n: p.cards.length, total: p.total, rest: p.rest });
   }
-  bins.sort((a, b) => b.cards.length - a.cards.length || Math.max(...b.groups.map(g => g.rarity)) - Math.max(...a.groups.map(g => g.rarity)));
+  bins.sort((a, b) => a.rank - b.rank || (a.rank === 0 ? a.order - b.order : b.cards.length - a.cards.length || Math.max(...b.groups.map(g => g.rarity)) - Math.max(...a.groups.map(g => g.rarity))));
   const outs = [];
   let used = 0;
   for (const b of bins) {
@@ -842,6 +849,37 @@ function boostCoveredGain(catalog, covered, coins) {
   for (const g of groups.values()) if (g.all) s += boostGold(coins, g.rarity);
   return s;
 }
+// Bonus de fin de licence : 5 pièces par carte de la licence (cartes actives), une seule fois, quand le joueur les a toutes (déjà chez lui ou couvertes par nos envois).
+// Une licence déjà complète chez lui sans aucune carte de nos envois ne rapporte rien.
+const BOOST_LICENCE_PER_CARD = 5; // barème fixe du site pour le bonus de licence (non exposé par lic_rar_state, qui ne donne que l'or par rareté)
+function boostLicenceGain(catalog, covered, his = {}, per = BOOST_LICENCE_PER_CARD) {
+  const lic = new Map();
+  for (const c of catalog) {
+    if (!c.licence || c.rarity == null || c.rarity > 5) continue; // les Mythiques Alternatives ne comptent pas pour le bonus de licence
+    let l = lic.get(c.licence);
+    if (!l) lic.set(c.licence, l = { n: 0, all: true, any: false, before: true });
+    l.n++;
+    const mine = covered.has(c.id), has = his[c.id] > 0;
+    if (!mine && !has) l.all = false;
+    if (mine) l.any = true;
+    if (!has) l.before = false;
+  }
+  const licences = [];
+  for (const [licence, l] of lic) if (l.all && !(l.before && !l.any)) licences.push({ licence, n: l.n, gold: l.n * per });
+  return { gold: licences.reduce((s, l) => s + l.gold, 0), licences };
+}
+// Licences dont chaque carte est chez lui ou dans un envoi accepté : le bonus est acquis, on peut récupérer les cartes sans le perdre.
+function boostLicenceDone(catalog, accepted, his = {}) {
+  const lic = new Map();
+  for (const c of catalog) if (c.licence && c.rarity != null && c.rarity <= 5) lic.set(c.licence, (lic.get(c.licence) ?? true) && (accepted.has(c.id) || his[c.id] > 0));
+  return new Set([...lic].filter(([, ok]) => ok).map(([k]) => k));
+}
+// Sépare les retours possibles : ceux dont toutes les licences sont complètes, et ceux qui feraient perdre un bonus de licence encore à venir.
+function boostSplitBacks(list, catalog, accepted, his = {}) {
+  const done = boostLicenceDone(catalog.values ? [...catalog.values()] : catalog, accepted, his), ready = [], early = [];
+  for (const r of list) (r.cards.every(id => { const c = catalog.get(id); return !c || !c.licence || done.has(c.licence); }) ? ready : early).push(r);
+  return { ready, early };
+}
 // BOOST-END
 let goldCache = { at: 0, coins: BOOST_GOLD_DEFAULT, enabled: null, fallback: true }, goldLoading = null;
 function goldRefresh() { // appel facultatif : l'onglet Boost ne l'attend que 3 s au tout premier chargement
@@ -891,7 +929,7 @@ async function boostState(user, fresh = false) {
   const liveMap = liveCatalog(), liveCards = [...liveMap.values()]; // les cartes retirées du jeu ne comptent ni pour le bonus ni pour le plan
   const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
   const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
-  const ready = boostReturnable(bal, rows, liveMap), backs = ready.slice(0, slots);
+  const groupReady = boostReturnable(bal, rows, liveMap);
   // Les retours passent avant les nouveaux envois : on alterne au lieu d'empiler tout chez lui.
   // Scan de sa collection : les groupes qu'il a déjà complets ne sont ni envoyés ni comptés dans l'or espéré.
   let scan = { ok: false, private: false };
@@ -901,18 +939,31 @@ async function boostState(user, fresh = false) {
     else if (theirs?.cards) scan = { ok: true, private: false, his: theirs.cards };
   } catch { /* collection illisible : plan sans filtre */ }
   const hisDone = scan.ok ? boostDone(liveCards, scan.his, bal.covered) : new Set();
+  const his = scan.ok ? scan.his : {};
+  const accepted = new Set(rows.filter(r => r.dir === 'out' && r.status === 'acceptee').flatMap(r => r.cards));
+  const { ready, early } = boostSplitBacks(groupReady, liveMap, accepted, his), backs = ready.slice(0, slots);
   const goldCards = liveCards.filter(c => !hisDone.has(c.id));
-  const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length), hisDone });
-  const every = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room: Infinity, slots: Infinity, hisDone }); // tous les envois restants possibles, sans limite
-  const held = bal.backable.length - ready.length;
+  const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length + early.length), hisDone, his });
+  const every = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room: Infinity, slots: Infinity, hisDone, his }); // tous les envois restants possibles, sans limite
   const card = id => ({ id, ...catalog.get(id) });
+  const held = bal.backable.length - groupReady.length;
+  const lic = c => boostLicenceGain(liveCards, c, his);
+  const licOf = ids => lic(new Set([...bal.covered, ...ids])).gold, ids = o => o.cards.map(c => c.id);
+  let seen = new Set(bal.covered), seenGain = lic(seen).gold; // le bonus est attribué à l'envoi qui complète la licence
+  const outsOut = plan.outs.map(o => {
+    o.cards.forEach(c => seen.add(c.id));
+    const now = lic(seen), got = now.gold - seenGain; seenGain = now.gold;
+    return { gain: boostOutGain(o.groups, gold.coins) + got, licenceGain: got, groups: o.groups, cards: o.cards.map(c => card(c.id)) };
+  });
   const p = db.prepare('SELECT name, avatar FROM players WHERE id = ?').get(user);
   return { user, name: p?.name || null, avatar: p?.avatar || null, cap, atHim: bal.atHim, pendingOut: bal.pendingOut, room, slots, coin: BOOST_COIN,
-    gold: { enabled: gold.enabled, fallback: gold.fallback, pending: boostCoveredGain(goldCards, bal.covered, gold.coins), planned: boostCoveredGain(goldCards, new Set([...bal.covered, ...plan.outs.flatMap(o => o.cards.map(c => c.id))]), gold.coins),
-      total: boostCoveredGain(goldCards, new Set([...bal.covered, ...every.outs.flatMap(o => o.cards.map(c => c.id))]), gold.coins) },
+    gold: { enabled: gold.enabled, fallback: gold.fallback, pending: boostCoveredGain(goldCards, bal.covered, gold.coins) + licOf([]), planned: boostCoveredGain(goldCards, new Set([...bal.covered, ...plan.outs.flatMap(ids)]), gold.coins) + licOf(plan.outs.flatMap(ids)),
+      total: boostCoveredGain(goldCards, new Set([...bal.covered, ...every.outs.flatMap(ids)]), gold.coins) + licOf(every.outs.flatMap(ids)),
+      licence: { perCard: BOOST_LICENCE_PER_CARD, pending: licOf([]), planned: licOf(plan.outs.flatMap(ids)), total: licOf(every.outs.flatMap(ids)) } },
     scan: { ok: scan.ok, private: scan.private, doneGroups: scan.ok ? plan.skipped.his : 0 },
-    outs: plan.outs.map(o => ({ gain: boostOutGain(o.groups, gold.coins), groups: o.groups, cards: o.cards.map(c => card(c.id)) })), skipped: plan.skipped, groups: plan.groups, left: plan.left,
-    backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: ready.length, heldBacks: held,
+    outs: outsOut, skipped: plan.skipped, groups: plan.groups, left: plan.left,
+    backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })),
+    earlyBacks: early.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: ready.length, heldBacks: held,
     history: rows.slice().reverse().map(r => ({ id: r.id, dir: r.dir, status: r.status, error: r.error, created_at: r.created_at, closed_at: r.closed_at, parent: r.parent, cards: r.cards.map(card) })) };
 }
 function saveBoostCap({ cap }) {
@@ -920,7 +971,7 @@ function saveBoostCap({ cap }) {
   kvSet('boost_cap', cap);
   return [200, { ok: true, cap }];
 }
-async function boostPropose({ user, kind, cards, parent }) {
+async function boostPropose({ user, kind, cards, parent, confirmEarly }) {
   if (typeof user !== 'string' || !user || !['out', 'back'].includes(kind)) return [400, { error: 'Joueur ou type invalide.' }];
   if (boostBusy) return [409, { error: 'Un envoi du boost est déjà en cours.' }];
   boostBusy = true;
@@ -940,6 +991,7 @@ async function boostPropose({ user, kind, cards, parent }) {
     } else {
       const r = rows.find(x => x.id === parent && x.dir === 'out');
       if (!r || !boostReturnable(boostBalance(rows), rows, liveCatalog()).some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
+      if (st.earlyBacks.some(b => b.id === r.id) && confirmEarly !== true) return [400, { error: 'Ce retour ferait perdre le bonus de fin de licence : confirmation requise.' }];
       list = r.cards; get = r.cards; giveCoins = BOOST_COIN;
     }
     const ins = db.prepare('INSERT INTO boost_trades (player, name, dir, parent, cards, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
