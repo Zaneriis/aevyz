@@ -453,7 +453,9 @@ const start = async () => {
   assert.strictEqual(bo.gold.fallback, false, 'barème lu sur le site'); assert.strictEqual(bo.gold.enabled, true);
   assert.strictEqual(bo.slots, 19, 'emplacements : 20 moins mes échanges envoyés en attente');
   assert.deepStrictEqual(bo.outs.map(o => o.cards.map(c => c.id)), [['am5']], 'groupes complets et libres seulement');
-  assert.deepStrictEqual([bo.skipped.busy, bo.skipped.missing], [3, 7], 'cartes engagées ailleurs ou manquantes');
+  assert.deepStrictEqual([bo.skipped.busy, bo.skipped.missing], [3, 4], 'cartes engagées ailleurs ou manquantes');
+  assert.strictEqual(bo.scan.ok, true, 'collection scannée'); assert.strictEqual(bo.scan.doneGroups, bo.skipped.his);
+  assert.strictEqual(typeof bo.gold.total, 'number', 'or espéré une fois tous les échanges faits');
   assert.strictEqual((await post('/api/boost/cap', { cap: 0 })).status, 400);
   assert.strictEqual((await post('/api/boost/cap', { cap: 1 })).status, 200);
   assert.strictEqual((await boost()).room, 1, 'limite absolue en nombre de cartes');

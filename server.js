@@ -757,7 +757,7 @@ let boostBusy = false;
 // BOOST-START
 // Regroupe les cartes restantes par (licence, rareté), écarte les groupes que je ne peux pas envoyer en entier, puis les range
 // dans le moins d'échanges possible (premier ajustement décroissant). Les Mythiques Alternatives (rareté 6) sont exclues.
-function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20 }) {
+function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20, hisDone = new Set() }) {
   const groups = new Map();
   for (const c of catalog) {
     if (c.rarity == null || c.rarity > 5 || !c.licence) continue;
@@ -765,8 +765,9 @@ function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20 }) {
     if (!groups.has(k)) groups.set(k, { licence: c.licence, rarity: c.rarity, cards: [] });
     groups.get(k).cards.push(c);
   }
-  const skipped = { done: 0, missing: 0, busy: 0 }, pieces = [];
+  const skipped = { done: 0, missing: 0, busy: 0, his: 0 }, pieces = [];
   for (const g of groups.values()) {
+    if (g.cards.every(c => hisDone.has(c.id))) { skipped.his++; continue; } // déjà complet chez lui : rien à envoyer
     const rest = g.cards.filter(c => !covered.has(c.id)).sort((a, b) => (a.id < b.id ? -1 : 1));
     if (!rest.length) { skipped.done++; continue; }
     if (rest.some(c => busy.has(c.id))) { skipped.busy++; continue; }
@@ -791,6 +792,19 @@ function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20 }) {
     used += b.cards.length;
   }
   return { outs, skipped, groups: groups.size, left: bins.length - outs.length };
+}
+// Cartes des groupes (licence × rareté ≤ 5) que le joueur possède déjà en entier, d'après sa collection scannée (id -> exemplaires).
+function boostDone(catalog, his) {
+  const groups = new Map();
+  for (const c of catalog) {
+    if (c.rarity == null || c.rarity > 5 || !c.licence) continue;
+    const k = c.licence + '\0' + c.rarity;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(c.id);
+  }
+  const done = new Set();
+  for (const ids of groups.values()) if (ids.every(id => his[id] > 0)) ids.forEach(id => done.add(id));
+  return done;
 }
 // Où en est ce joueur : cartes déjà engagées dans un envoi (ne pas renvoyer), cartes actuellement chez lui, retours possibles.
 function boostBalance(rows) {
@@ -878,12 +892,24 @@ async function boostState(user, fresh = false) {
   const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
   const ready = boostReturnable(bal, rows, liveMap), backs = ready.slice(0, slots);
   // Les retours passent avant les nouveaux envois : on alterne au lieu d'empiler tout chez lui.
-  const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length) });
+  // Scan de sa collection : les groupes qu'il a déjà complets ne sont ni envoyés ni comptés dans l'or espéré.
+  let scan = { ok: false, private: false };
+  try {
+    const { theirs } = await theirsOf(user, fresh ? 0 : BADGE_CACHE_MS);
+    if (theirs?.private) scan = { ok: false, private: true };
+    else if (theirs?.cards) scan = { ok: true, private: false, his: theirs.cards };
+  } catch { /* collection illisible : plan sans filtre */ }
+  const hisDone = scan.ok ? boostDone(liveCards, scan.his) : new Set();
+  const goldCards = liveCards.filter(c => !hisDone.has(c.id));
+  const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length), hisDone });
+  const every = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room: Infinity, slots: Infinity, hisDone }); // tous les envois restants possibles, sans limite
   const held = bal.backable.length - ready.length;
   const card = id => ({ id, ...catalog.get(id) });
   const p = db.prepare('SELECT name, avatar FROM players WHERE id = ?').get(user);
   return { user, name: p?.name || null, avatar: p?.avatar || null, cap, atHim: bal.atHim, pendingOut: bal.pendingOut, room, slots, coin: BOOST_COIN,
-    gold: { enabled: gold.enabled, fallback: gold.fallback, pending: boostCoveredGain(liveCards, bal.covered, gold.coins), planned: boostCoveredGain(liveCards, new Set([...bal.covered, ...plan.outs.flatMap(o => o.cards.map(c => c.id))]), gold.coins) },
+    gold: { enabled: gold.enabled, fallback: gold.fallback, pending: boostCoveredGain(goldCards, bal.covered, gold.coins), planned: boostCoveredGain(goldCards, new Set([...bal.covered, ...plan.outs.flatMap(o => o.cards.map(c => c.id))]), gold.coins),
+      total: boostCoveredGain(goldCards, new Set([...bal.covered, ...every.outs.flatMap(o => o.cards.map(c => c.id))]), gold.coins) },
+    scan: { ok: scan.ok, private: scan.private, doneGroups: scan.ok ? plan.skipped.his : 0 },
     outs: plan.outs.map(o => ({ gain: boostOutGain(o.groups, gold.coins), groups: o.groups, cards: o.cards.map(c => card(c.id)) })), skipped: plan.skipped, groups: plan.groups, left: plan.left,
     backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: ready.length, heldBacks: held,
     history: rows.slice().reverse().map(r => ({ id: r.id, dir: r.dir, status: r.status, error: r.error, created_at: r.created_at, closed_at: r.closed_at, parent: r.parent, cards: r.cards.map(card) })) };
