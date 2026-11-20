@@ -794,7 +794,7 @@ function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20, hisDo
   return { outs, skipped, groups: groups.size, left: bins.length - outs.length };
 }
 // Cartes des groupes (licence × rareté ≤ 5) que le joueur possède déjà en entier, d'après sa collection scannée (id -> exemplaires).
-function boostDone(catalog, his) {
+function boostDone(catalog, his, covered = new Set()) {
   const groups = new Map();
   for (const c of catalog) {
     if (c.rarity == null || c.rarity > 5 || !c.licence) continue;
@@ -803,7 +803,8 @@ function boostDone(catalog, his) {
     groups.get(k).push(c.id);
   }
   const done = new Set();
-  for (const ids of groups.values()) if (ids.every(id => his[id] > 0)) ids.forEach(id => done.add(id));
+  // Un groupe dont une carte est déjà engagée dans un de nos envois n'est pas « complet avant nous » : c'est peut-être notre envoi qui le complète.
+  for (const ids of groups.values()) if (!ids.some(id => covered.has(id)) && ids.every(id => his[id] > 0)) ids.forEach(id => done.add(id));
   return done;
 }
 // Où en est ce joueur : cartes déjà engagées dans un envoi (ne pas renvoyer), cartes actuellement chez lui, retours possibles.
@@ -899,7 +900,7 @@ async function boostState(user, fresh = false) {
     if (theirs?.private) scan = { ok: false, private: true };
     else if (theirs?.cards) scan = { ok: true, private: false, his: theirs.cards };
   } catch { /* collection illisible : plan sans filtre */ }
-  const hisDone = scan.ok ? boostDone(liveCards, scan.his) : new Set();
+  const hisDone = scan.ok ? boostDone(liveCards, scan.his, bal.covered) : new Set();
   const goldCards = liveCards.filter(c => !hisDone.has(c.id));
   const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length), hisDone });
   const every = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room: Infinity, slots: Infinity, hisDone }); // tous les envois restants possibles, sans limite

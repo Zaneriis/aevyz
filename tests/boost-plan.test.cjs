@@ -101,3 +101,12 @@ test('or espéré : les groupes déjà complets chez lui ne rapportent rien', ()
   assert.equal(boostCoveredGain(goldCards, new Set(every.outs.flatMap(o => o.cards.map(c => c.id))), coins), 15);
   assert.equal(boostCoveredGain(goldCards, new Set(), coins), 0);
 });
+
+test('groupe complété chez lui grâce à nos envois : toujours compté dans l\'or', () => {
+  const cat = mk('A', 0, 2);
+  const covered = new Set(['A0-0', 'A0-1']);
+  const hisDone = boostDone(cat, { 'A0-0': 1, 'A0-1': 1 }, covered);
+  assert.equal(hisDone.size, 0);
+  assert.equal(boostCoveredGain(cat.filter(c => !hisDone.has(c.id)), covered, [10, 15, 25, 40, 75]), 10);
+  assert.equal(boostDone(cat, { 'A0-0': 1, 'A0-1': 1 }).size, 2);
+});
