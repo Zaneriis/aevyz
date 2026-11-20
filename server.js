@@ -769,7 +769,7 @@ function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20 }) {
     if (!rest.length) { skipped.done++; continue; }
     if (rest.some(c => busy.has(c.id))) { skipped.busy++; continue; }
     if (rest.some(c => !(owned.get(c.id) > 0))) { skipped.missing++; continue; }
-    for (let i = 0; i < rest.length; i += max) pieces.push({ licence: g.licence, rarity: g.rarity, total: g.cards.length, cards: rest.slice(i, i + max) });
+    for (let i = 0; i < rest.length; i += max) pieces.push({ licence: g.licence, rarity: g.rarity, total: g.cards.length, rest: rest.length, cards: rest.slice(i, i + max) });
   }
   pieces.sort((a, b) => b.cards.length - a.cards.length || b.rarity - a.rarity || (a.licence < b.licence ? -1 : 1));
   const bins = [];
@@ -777,7 +777,7 @@ function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20 }) {
     let bin = bins.find(b => b.cards.length + p.cards.length <= max);
     if (!bin) bins.push(bin = { cards: [], groups: [] });
     bin.cards.push(...p.cards);
-    bin.groups.push({ licence: p.licence, rarity: p.rarity, n: p.cards.length, total: p.total });
+    bin.groups.push({ licence: p.licence, rarity: p.rarity, n: p.cards.length, total: p.total, rest: p.rest });
   }
   bins.sort((a, b) => b.cards.length - a.cards.length || Math.max(...b.groups.map(g => g.rarity)) - Math.max(...a.groups.map(g => g.rarity)));
   const outs = [];
@@ -810,8 +810,8 @@ function boostBalance(rows) {
 // Or espéré : montant fixe par groupe (licence × rareté) complet, une seule fois. Rareté hors barème (Mythique) : 0.
 const BOOST_GOLD_DEFAULT = [10, 15, 25, 40, 75];
 const boostGold = (coins, rarity) => (Number.isFinite(coins?.[rarity]) ? coins[rarity] : 0);
-// Groupes d'un envoi tenus en entier (n === total) : seuls ceux-là rapportent à coup sûr avec cet échange.
-const boostOutGain = (groups, coins) => groups.reduce((s, g) => s + (g.n === g.total ? boostGold(coins, g.rarity) : 0), 0);
+// Groupes d'un envoi qui y tiennent en entier (n = toutes les cartes restantes du groupe, déjà envoyées exclues) : seuls ceux-là rapportent à coup sûr avec cet échange.
+const boostOutGain = (groups, coins) => groups.reduce((s, g) => s + (g.n === (g.rest ?? g.total) ? boostGold(coins, g.rarity) : 0), 0);
 // Groupes entièrement couverts par des envois (en cours ou acceptés) : l'or attendu une fois tout accepté.
 function boostCoveredGain(catalog, covered, coins) {
   const groups = new Map();
@@ -871,12 +871,13 @@ async function boostState(user, fresh = false) {
   const { owned, outgoing, trades } = await mineData();
   boostSync(user, trades);
   const rows = boostRows(user), bal = boostBalance(rows), catalog = catalogMap(), gold = await boostCoins();
-  const liveCards = db.prepare('SELECT id, licence, rarity FROM cards WHERE active IS NOT 0').all(); // les cartes retirées du jeu ne comptent plus pour le bonus
+  const liveCards = db.prepare('SELECT id, name, licence, rarity, art FROM cards WHERE active IS NOT 0').all(); // les cartes retirées du jeu ne comptent ni pour le bonus ni pour le plan
+  const liveMap = new Map(liveCards.map(c => [c.id, c]));
   const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
   const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
-  const ready = boostReturnable(bal, rows, catalog), backs = ready.slice(0, slots);
+  const ready = boostReturnable(bal, rows, liveMap), backs = ready.slice(0, slots);
   // Les retours passent avant les nouveaux envois : on alterne au lieu d'empiler tout chez lui.
-  const plan = boostPlan({ catalog: [...catalog.values()], owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length) });
+  const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length) });
   const held = bal.backable.length - ready.length;
   const card = id => ({ id, ...catalog.get(id) });
   const p = db.prepare('SELECT name, avatar FROM players WHERE id = ?').get(user);

@@ -75,3 +75,9 @@ test('or espéré : barème par rareté, groupes complets seulement', () => {
   assert.equal(boostCoveredGain(cat, new Set(cat.map(c => c.id)), coins), 35);
   assert.equal(boostCoveredGain(cat, new Set(['A0-0', 'A0-1', 'B2-0', 'B2-1']), coins), 25);
 });
+
+test('or espéré : un envoi qui complète un groupe en partie déjà envoyé est valorisé', () => {
+  const cat = mk('A', 0, 25);
+  const r = boostPlan({ ...base(cat), covered: new Set(cat.slice(0, 20).map(c => c.id)) });
+  assert.equal(boostOutGain(r.outs[0].groups, [10]), 10);
+});
