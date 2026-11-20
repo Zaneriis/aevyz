@@ -777,7 +777,7 @@ function boostPlan({ catalog, owned, covered, busy, room, slots, max = 20, hisDo
   // Licences qu'on peut boucler : chaque carte est déjà chez lui, déjà engagée ou envoyée dans ce plan. Elles passent en premier et leurs envois sont
   // rangés côte à côte, pour que la licence soit complète vite et que les retours reviennent sans bloquer le stock de cartes.
   const sending = new Set(pieces.flatMap(p => p.cards.map(c => c.id))), open = new Set();
-  for (const c of catalog) if (c.licence && !(covered.has(c.id) || his[c.id] > 0 || hisDone.has(c.id) || sending.has(c.id))) open.add(c.licence);
+  for (const c of catalog) if (c.licence && c.rarity != null && c.rarity <= 5 && !(covered.has(c.id) || his[c.id] > 0 || hisDone.has(c.id) || sending.has(c.id))) open.add(c.licence);
   const closable = new Set(pieces.filter(p => !open.has(p.licence)).map(p => p.licence));
   const rank = p => (closable.has(p.licence) ? 0 : 1);
   pieces.sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 ? (a.licence < b.licence ? -1 : a.licence > b.licence ? 1 : 0) : 0) || b.cards.length - a.cards.length || b.rarity - a.rarity || (a.licence < b.licence ? -1 : 1));
@@ -851,11 +851,11 @@ function boostCoveredGain(catalog, covered, coins) {
 }
 // Bonus de fin de licence : 5 pièces par carte de la licence (cartes actives), une seule fois, quand le joueur les a toutes (déjà chez lui ou couvertes par nos envois).
 // Une licence déjà complète chez lui sans aucune carte de nos envois ne rapporte rien.
-const BOOST_LICENCE_PER_CARD = 5;
+const BOOST_LICENCE_PER_CARD = 5; // barème fixe du site pour le bonus de licence (non exposé par lic_rar_state, qui ne donne que l'or par rareté)
 function boostLicenceGain(catalog, covered, his = {}, per = BOOST_LICENCE_PER_CARD) {
   const lic = new Map();
   for (const c of catalog) {
-    if (!c.licence) continue;
+    if (!c.licence || c.rarity == null || c.rarity > 5) continue; // les Mythiques Alternatives ne comptent pas pour le bonus de licence
     let l = lic.get(c.licence);
     if (!l) lic.set(c.licence, l = { n: 0, all: true, any: false, before: true });
     l.n++;
@@ -871,7 +871,7 @@ function boostLicenceGain(catalog, covered, his = {}, per = BOOST_LICENCE_PER_CA
 // Licences dont chaque carte est chez lui ou dans un envoi accepté : le bonus est acquis, on peut récupérer les cartes sans le perdre.
 function boostLicenceDone(catalog, accepted, his = {}) {
   const lic = new Map();
-  for (const c of catalog) if (c.licence) lic.set(c.licence, (lic.get(c.licence) ?? true) && (accepted.has(c.id) || his[c.id] > 0));
+  for (const c of catalog) if (c.licence && c.rarity != null && c.rarity <= 5) lic.set(c.licence, (lic.get(c.licence) ?? true) && (accepted.has(c.id) || his[c.id] > 0));
   return new Set([...lic].filter(([, ok]) => ok).map(([k]) => k));
 }
 // Sépare les retours possibles : ceux dont toutes les licences sont complètes, et ceux qui feraient perdre un bonus de licence encore à venir.

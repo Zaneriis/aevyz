@@ -127,7 +127,7 @@ test('les envois d\'une même licence sont regroupés, licences bouclables en pr
   const owned = own(cat); cat.filter(c => c.licence === 'C').forEach(c => owned.delete(c.id));
   const r = boostPlan({ ...base(cat), owned });
   const lics = r.outs.map(o => [...new Set(o.groups.map(g => g.licence))]);
-  assert.deepEqual(plain(lics), [['A'], ['A'], ['B'], ['B']].map((l, i) => i < 2 ? ['A'] : ['B']));
+  assert.deepEqual(plain(lics), [['A'], ['A'], ['B'], ['B']]);
   assert.equal(r.outs.length, 4);
 });
 
@@ -140,4 +140,19 @@ test('retours : pas avant la licence complète, sinon retour anticipé', () => {
   const full = boostSplitBacks(back, map, new Set(['A0-0', 'A0-1', 'A1-0']));
   assert.equal(full.ready.length, 1);
   assert.equal(boostSplitBacks(back, map, new Set(['A0-0', 'A0-1']), { 'A1-0': 1 }).ready.length, 1);
+});
+
+test('bonus de licence : les Mythiques Alternatives ne comptent pas et ne bloquent pas', () => {
+  const cat = [...mk('A', 0, 3), ...mk('A', 6, 1)];
+  const c = new Set(['A0-0', 'A0-1', 'A0-2']);
+  assert.equal(boostLicenceGain(cat, c).gold, 15);
+  const map = new Map(cat.map(x => [x.id, x]));
+  assert.equal(boostSplitBacks([{ id: 1, cards: [...c] }], map, c).ready.length, 1);
+});
+
+test('licence bouclable avant une plus grosse licence non bouclable', () => {
+  const cat = [...mk('Z', 0, 3), ...mk('Big', 0, 15), ...mk('Big', 1, 5)];
+  const owned = own(cat); owned.delete('Big1-0');
+  const r = boostPlan({ ...base(cat), owned });
+  assert.equal(r.outs[0].groups[0].licence, 'Z');
 });
