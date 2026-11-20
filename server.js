@@ -714,6 +714,8 @@ async function proposeTrade({ to, give, get, message = '', giveCoins = 0, getCoi
   return [200, { ok: true, id }];
 }
 // ---- Échanges en attente : vus de mon côté (je donne / je reçois), avec mes exemplaires de chaque carte ----
+// Catalogue sans les cartes retirées du jeu : même source pour le plan du boost, les retours et l'or.
+const liveCatalog = () => new Map(db.prepare('SELECT id, name, licence, rarity, art FROM cards WHERE active IS NOT 0').all().map(c => [c.id, c]));
 const catalogMap = () => new Map(db.prepare('SELECT id, name, licence, rarity, art FROM cards').all().map(c => [c.id, c]));
 async function pendingTrades(all = false) {
   const [market, owned] = await Promise.all([sb('/rest/v1/rpc/market_me', { method: 'POST', body: {} }), selectAll('owned_cards', 'card_id,count', 'card_id')]);
@@ -827,7 +829,7 @@ function boostCoveredGain(catalog, covered, coins) {
 }
 // BOOST-END
 let goldCache = { at: 0, coins: BOOST_GOLD_DEFAULT, enabled: null, fallback: true }, goldLoading = null;
-function goldRefresh() { // appel facultatif : jamais attendu par l'onglet Boost
+function goldRefresh() { // appel facultatif : l'onglet Boost ne l'attend que 3 s au tout premier chargement
   goldLoading ||= sb('/rest/v1/rpc/lic_rar_state', { method: 'POST', body: {} }).then(d => {
     const ok = Array.isArray(d?.coins) && d.coins.length;
     goldCache = { at: Date.now(), coins: ok ? d.coins.map(Number) : BOOST_GOLD_DEFAULT, enabled: d?.enabled ?? null, fallback: !ok };
@@ -871,8 +873,7 @@ async function boostState(user, fresh = false) {
   const { owned, outgoing, trades } = await mineData();
   boostSync(user, trades);
   const rows = boostRows(user), bal = boostBalance(rows), catalog = catalogMap(), gold = await boostCoins();
-  const liveCards = db.prepare('SELECT id, name, licence, rarity, art FROM cards WHERE active IS NOT 0').all(); // les cartes retirées du jeu ne comptent ni pour le bonus ni pour le plan
-  const liveMap = new Map(liveCards.map(c => [c.id, c]));
+  const liveMap = liveCatalog(), liveCards = [...liveMap.values()]; // les cartes retirées du jeu ne comptent ni pour le bonus ni pour le plan
   const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
   const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
   const ready = boostReturnable(bal, rows, liveMap), backs = ready.slice(0, slots);
@@ -911,7 +912,7 @@ async function boostPropose({ user, kind, cards, parent }) {
       list = cards; give = cards; getCoins = BOOST_COIN;
     } else {
       const r = rows.find(x => x.id === parent && x.dir === 'out');
-      if (!r || !boostReturnable(boostBalance(rows), rows, catalogMap()).some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
+      if (!r || !boostReturnable(boostBalance(rows), rows, liveCatalog()).some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
       list = r.cards; get = r.cards; giveCoins = BOOST_COIN;
     }
     const ins = db.prepare('INSERT INTO boost_trades (player, name, dir, parent, cards, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
