@@ -965,7 +965,9 @@ async function boostState(user, fresh = false) {
   const his = scan.ok ? scan.his : {};
   const accepted = new Set(rows.filter(r => r.dir === 'out' && r.status === 'acceptee').flatMap(r => r.cards));
   const every = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room: Infinity, slots: Infinity, hisDone, his }); // tous les envois restants possibles, sans limite
-  const future = new Set([...bal.covered, ...every.outs.flatMap(o => o.cards.map(c => c.id))]);
+  // Portée : cartes que nos envois pourront un jour apporter, y compris celles occupées par un échange en attente (elles se libéreront).
+  const reachPlan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: new Set(), room: Infinity, slots: Infinity, hisDone, his });
+  const future = new Set([...bal.covered, ...outgoing, ...reachPlan.outs.flatMap(o => o.cards.map(c => c.id))]);
   const { ready, early } = boostSplitBacks(groupReady, liveMap, accepted, his, future), backs = ready.slice(0, slots);
   const goldCards = liveCards.filter(c => !hisDone.has(c.id));
   const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - groupReady.length + early.length), hisDone, his });

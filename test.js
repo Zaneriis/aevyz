@@ -474,11 +474,12 @@ const start = async () => {
   assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.history[0].id })).status, 400, 'pas de retour pour des cartes déjà revenues');
   game.hisExtra = { am5: 1 };
   bo = await boost('&fresh=1');
-  assert.deepStrictEqual([bo.atHim, bo.backs.length, bo.earlyBacks.length], [1, 1, 0], 'accepté : chez lui ; licence jamais complétable, aucun bonus à perdre : retour direct');
+  assert.deepStrictEqual([bo.atHim, bo.backs.length, bo.earlyBacks.length], [1, 0, 1], 'accepté : chez lui ; licence encore complétable (cartes occupées ailleurs incluses) : retour anticipé seulement');
   assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: 999 })).status, 400);
-  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.backs[0].id, confirmEarly: false })).status, 200, 'pas de confirmation requise sans bonus à perdre');
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.earlyBacks[0].id })).status, 400, 'retour anticipé sans confirmation : refusé');
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.earlyBacks[0].id, confirmEarly: true })).status, 200);
   assert.deepStrictEqual([game.tradeProposal.p_give, game.tradeProposal.p_get, game.tradeProposal.p_give_coins], [[], ['am5'], 1], 'retour : l\'inverse exact');
-  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.backs[0].id, confirmEarly: true })).status, 400, 'un seul retour à la fois');
+  assert.strictEqual((await post('/api/boost/propose', { user: 'lui', kind: 'back', parent: bo.earlyBacks[0].id, confirmEarly: true })).status, 400, 'un seul retour à la fois');
   game.boostId = 78;
   game.extraTrades.push({ id: 78, mine: true, status: 'acceptee', to: 'lui', give: [], get: ['am5'] });
   bo = await boost('&fresh=1');
