@@ -814,8 +814,21 @@ function boostDone(catalog, his, covered = new Set()) {
   for (const ids of groups.values()) if (!ids.some(id => covered.has(id)) && ids.every(id => his[id] > 0)) ids.forEach(id => done.add(id));
   return done;
 }
+// Envois acceptés sans retour en cours ni accepté dont aucune carte n'est plus chez lui : le joueur les a redemandés à la main sur le site.
+// Déduit à la volée de sa collection scannée, rien n'est écrit dans l'historique. Sans scan lisible, on ne déduit rien.
+function boostReturned(rows, his) {
+  const out = new Set();
+  if (!his) return out;
+  const live = new Set(['envoi', 'attente', 'acceptee']);
+  for (const r of rows) {
+    if (r.dir !== 'out' || r.status !== 'acceptee' || !r.cards.length) continue;
+    if (rows.some(b => b.dir === 'back' && b.parent === r.id && live.has(b.status))) continue;
+    if (r.cards.every(id => !(his[id] > 0))) out.add(r.id);
+  }
+  return out;
+}
 // Où en est ce joueur : cartes déjà engagées dans un envoi (ne pas renvoyer), cartes actuellement chez lui, retours possibles.
-function boostBalance(rows) {
+function boostBalance(rows, returned = new Set()) {
   const live = new Set(['envoi', 'attente', 'acceptee']);
   const covered = new Set(), backable = [];
   let atHim = 0, pendingOut = 0;
@@ -825,6 +838,7 @@ function boostBalance(rows) {
     if (r.dir !== 'out' || !live.has(r.status)) continue;
     r.cards.forEach(id => covered.add(id));
     if (r.status !== 'acceptee') { pendingOut += r.cards.length; continue; }
+    if (returned.has(r.id)) continue; // cartes déjà récupérées hors de l'outil : toujours engagées (covered), mais plus chez lui ni à rendre
     const st = back.get(r.id) || [];
     if (!st.includes('acceptee')) atHim += r.cards.length;
     if (!st.some(s => live.has(s))) backable.push(r);
@@ -875,9 +889,16 @@ function boostLicenceDone(catalog, accepted, his = {}) {
   return new Set([...lic].filter(([, ok]) => ok).map(([k]) => k));
 }
 // Sépare les retours possibles : ceux dont toutes les licences sont complètes, et ceux qui feraient perdre un bonus de licence encore à venir.
-function boostSplitBacks(list, catalog, accepted, his = {}) {
-  const done = boostLicenceDone(catalog.values ? [...catalog.values()] : catalog, accepted, his), ready = [], early = [];
-  for (const r of list) (r.cards.every(id => { const c = catalog.get(id); return !c || !c.licence || done.has(c.licence); }) ? ready : early).push(r);
+// future (facultatif) : cartes que nos prochains envois pourront encore apporter. Une licence qu'on ne pourra jamais boucler n'a plus de bonus à perdre : elle ne bloque pas ses retours.
+function boostSplitBacks(list, catalog, accepted, his = {}, future = null) {
+  const cards = catalog.values ? [...catalog.values()] : catalog, done = boostLicenceDone(cards, accepted, his), ready = [], early = [];
+  const open = new Set(done);
+  if (future) {
+    const reach = new Map();
+    for (const c of cards) if (c.licence && c.rarity != null && c.rarity <= 5) reach.set(c.licence, (reach.get(c.licence) ?? true) && (accepted.has(c.id) || his[c.id] > 0 || future.has(c.id)));
+    for (const [l, ok] of reach) if (!ok) open.add(l);
+  }
+  for (const r of list) (r.cards.every(id => { const c = catalog.get(id); return !c || !c.licence || open.has(c.licence); }) ? ready : early).push(r);
   return { ready, early };
 }
 // BOOST-END
@@ -925,12 +946,7 @@ async function boostState(user, fresh = false) {
   if (fresh) mineCache = null;
   const { owned, outgoing, trades } = await mineData();
   boostSync(user, trades);
-  const rows = boostRows(user), bal = boostBalance(rows), catalog = catalogMap(), gold = await boostCoins();
-  const liveMap = liveCatalog(), liveCards = [...liveMap.values()]; // les cartes retirées du jeu ne comptent ni pour le bonus ni pour le plan
-  const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
-  const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
-  const groupReady = boostReturnable(bal, rows, liveMap);
-  // Les retours passent avant les nouveaux envois : on alterne au lieu d'empiler tout chez lui.
+  const rows = boostRows(user), catalog = catalogMap(), gold = await boostCoins();
   // Scan de sa collection : les groupes qu'il a déjà complets ne sont ni envoyés ni comptés dans l'or espéré.
   let scan = { ok: false, private: false };
   try {
@@ -938,13 +954,20 @@ async function boostState(user, fresh = false) {
     if (theirs?.private) scan = { ok: false, private: true };
     else if (theirs?.cards) scan = { ok: true, private: false, his: theirs.cards };
   } catch { /* collection illisible : plan sans filtre */ }
+  const returned = boostReturned(rows, scan.ok ? scan.his : null), bal = boostBalance(rows, returned);
+  const liveMap = liveCatalog(), liveCards = [...liveMap.values()]; // les cartes retirées du jeu ne comptent ni pour le bonus ni pour le plan
+  const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
+  const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
+  const groupReady = boostReturnable(bal, rows, liveMap);
+  // Les retours passent avant les nouveaux envois : on alterne au lieu d'empiler tout chez lui.
   const hisDone = scan.ok ? boostDone(liveCards, scan.his, bal.covered) : new Set();
   const his = scan.ok ? scan.his : {};
   const accepted = new Set(rows.filter(r => r.dir === 'out' && r.status === 'acceptee').flatMap(r => r.cards));
-  const { ready, early } = boostSplitBacks(groupReady, liveMap, accepted, his), backs = ready.slice(0, slots);
-  const goldCards = liveCards.filter(c => !hisDone.has(c.id));
-  const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - bal.backable.length + early.length), hisDone, his });
   const every = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room: Infinity, slots: Infinity, hisDone, his }); // tous les envois restants possibles, sans limite
+  const future = new Set([...bal.covered, ...every.outs.flatMap(o => o.cards.map(c => c.id))]);
+  const { ready, early } = boostSplitBacks(groupReady, liveMap, accepted, his, future), backs = ready.slice(0, slots);
+  const goldCards = liveCards.filter(c => !hisDone.has(c.id));
+  const plan = boostPlan({ catalog: liveCards, owned, covered: bal.covered, busy: outgoing, room, slots: Math.max(0, slots - groupReady.length + early.length), hisDone, his });
   const card = id => ({ id, ...catalog.get(id) });
   const held = bal.backable.length - groupReady.length;
   const lic = c => boostLicenceGain(liveCards, c, his);
@@ -963,7 +986,7 @@ async function boostState(user, fresh = false) {
     scan: { ok: scan.ok, private: scan.private, doneGroups: scan.ok ? plan.skipped.his : 0 },
     outs: outsOut, skipped: plan.skipped, groups: plan.groups, left: plan.left,
     backs: backs.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })),
-    earlyBacks: early.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: ready.length, heldBacks: held,
+    earlyBacks: early.map(r => ({ id: r.id, accepted_at: r.closed_at, cards: r.cards.map(card) })), waitingBacks: ready.length, heldBacks: held, manualReturns: returned.size, returnedIds: [...returned],
     history: rows.slice().reverse().map(r => ({ id: r.id, dir: r.dir, status: r.status, error: r.error, created_at: r.created_at, closed_at: r.closed_at, parent: r.parent, cards: r.cards.map(card) })) };
 }
 function saveBoostCap({ cap }) {
@@ -990,7 +1013,7 @@ async function boostPropose({ user, kind, cards, parent, confirmEarly }) {
       list = cards; give = cards; getCoins = BOOST_COIN;
     } else {
       const r = rows.find(x => x.id === parent && x.dir === 'out');
-      if (!r || !boostReturnable(boostBalance(rows), rows, liveCatalog()).some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
+      if (!r || st.returnedIds.includes(r.id) || !boostReturnable(boostBalance(rows), rows, liveCatalog()).some(x => x.id === r.id)) return [400, { error: 'Ce retour n\'est pas possible (envoi non accepté ou retour déjà demandé).' }];
       if (st.earlyBacks.some(b => b.id === r.id) && confirmEarly !== true) return [400, { error: 'Ce retour ferait perdre le bonus de fin de licence : confirmation requise.' }];
       list = r.cards; get = r.cards; giveCoins = BOOST_COIN;
     }
