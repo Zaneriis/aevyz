@@ -6,8 +6,8 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance; this.boostOutGain = boostOutGain; this.boostCoveredGain = boostCoveredGain; this.boostDone = boostDone; this.boostLicenceGain = boostLicenceGain; this.boostSplitBacks = boostSplitBacks;', ctx);
-const { boostPlan, boostBalance, boostOutGain, boostCoveredGain, boostDone, boostLicenceGain, boostSplitBacks } = ctx;
+vm.runInContext(source.slice(source.indexOf('// BOOST-START'), source.indexOf('// BOOST-END')) + '\nthis.boostPlan = boostPlan; this.boostBalance = boostBalance; this.boostOutGain = boostOutGain; this.boostCoveredGain = boostCoveredGain; this.boostDone = boostDone; this.boostLicenceGain = boostLicenceGain; this.boostSplitBacks = boostSplitBacks; this.boostReturned = boostReturned;', ctx);
+const { boostPlan, boostBalance, boostOutGain, boostCoveredGain, boostDone, boostLicenceGain, boostSplitBacks, boostReturned } = ctx;
 
 const mk = (licence, rarity, n) => Array.from({ length: n }, (_, i) => ({ id: `${licence}${rarity}-${i}`, name: 'x', licence, rarity }));
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -155,4 +155,28 @@ test('licence bouclable avant une plus grosse licence non bouclable', () => {
   const owned = own(cat); owned.delete('Big1-0');
   const r = boostPlan({ ...base(cat), owned });
   assert.equal(r.outs[0].groups[0].licence, 'Z');
+});
+
+test('retours faits à la main : détectés sans toucher à l\'historique, toujours engagés', () => {
+  const row = (id, dir, status, cards, parent = null) => ({ id, dir, status, cards, parent, closed_at: 100 });
+  const rows = [row(1, 'out', 'acceptee', ['a', 'b']), row(2, 'out', 'acceptee', ['c']), row(3, 'out', 'acceptee', ['d']), row(4, 'back', 'echec', ['d'], 3), row(5, 'out', 'acceptee', ['e', 'f']), row(6, 'back', 'attente', ['e', 'f'], 5)];
+  const snapshot = JSON.stringify(rows);
+  const ret = boostReturned(rows, { c: 1, e: 0 }, 200);
+  assert.deepEqual(plain([...ret].sort()), [1, 3], 'a,b et d absents de sa collection ; c encore là ; 5 a un retour en attente');
+  assert.equal(JSON.stringify(rows), snapshot);
+  const b = boostBalance(rows, ret);
+  assert.equal(b.atHim, 1 + 2, 'c + e,f');
+  assert.deepEqual(plain(b.backable.map(r => r.id)), [2]);
+  assert.deepEqual(plain([...b.covered].sort()), ['a', 'b', 'c', 'd', 'e', 'f']);
+  assert.equal(boostReturned(rows, null, 200).size, 0, 'sans scan : rien déduit');
+  assert.equal(boostReturned(rows, { c: 1 }, 100).size, 0, 'scan antérieur à l\'acceptation (cache) : rien déduit');
+});
+
+test('retours : une licence impossible à boucler ne bloque plus', () => {
+  const cat = [...mk('A', 0, 2), ...mk('A', 1, 1)];
+  const map = new Map(cat.map(c => [c.id, c]));
+  const back = [{ id: 1, cards: ['A0-0', 'A0-1'] }], acc = new Set(['A0-0', 'A0-1']);
+  assert.equal(boostSplitBacks(back, map, acc, {}, new Set(['A1-0'])).early.length, 1, 'la carte manquante peut encore être envoyée');
+  const never = boostSplitBacks(back, map, acc, {}, new Set());
+  assert.equal(never.ready.length, 1); assert.equal(never.early.length, 0);
 });
