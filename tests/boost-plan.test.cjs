@@ -158,17 +158,18 @@ test('licence bouclable avant une plus grosse licence non bouclable', () => {
 });
 
 test('retours faits à la main : détectés sans toucher à l\'historique, toujours engagés', () => {
-  const row = (id, dir, status, cards, parent = null) => ({ id, dir, status, cards, parent });
+  const row = (id, dir, status, cards, parent = null) => ({ id, dir, status, cards, parent, closed_at: 100 });
   const rows = [row(1, 'out', 'acceptee', ['a', 'b']), row(2, 'out', 'acceptee', ['c']), row(3, 'out', 'acceptee', ['d']), row(4, 'back', 'echec', ['d'], 3), row(5, 'out', 'acceptee', ['e', 'f']), row(6, 'back', 'attente', ['e', 'f'], 5)];
   const snapshot = JSON.stringify(rows);
-  const ret = boostReturned(rows, { c: 1, e: 0 });
+  const ret = boostReturned(rows, { c: 1, e: 0 }, 200);
   assert.deepEqual(plain([...ret].sort()), [1, 3], 'a,b et d absents de sa collection ; c encore là ; 5 a un retour en attente');
   assert.equal(JSON.stringify(rows), snapshot);
   const b = boostBalance(rows, ret);
   assert.equal(b.atHim, 1 + 2, 'c + e,f');
   assert.deepEqual(plain(b.backable.map(r => r.id)), [2]);
   assert.deepEqual(plain([...b.covered].sort()), ['a', 'b', 'c', 'd', 'e', 'f']);
-  assert.equal(boostReturned(rows, null).size, 0, 'sans scan : rien déduit');
+  assert.equal(boostReturned(rows, null, 200).size, 0, 'sans scan : rien déduit');
+  assert.equal(boostReturned(rows, { c: 1 }, 100).size, 0, 'scan antérieur à l\'acceptation (cache) : rien déduit');
 });
 
 test('retours : une licence impossible à boucler ne bloque plus', () => {

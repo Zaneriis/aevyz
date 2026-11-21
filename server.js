@@ -622,7 +622,7 @@ async function theirsOf(user, maxAge) {
     theirsCache.set(user, entry);
     read = true;
   }
-  return { theirs: entry.theirs, read };
+  return { theirs: entry.theirs, read, at: entry.at };
 }
 // Trouve des échanges à rareté égale ; le mode « dupes » ignore les envies des deux joueurs.
 // safe : écarte ses seuls exemplaires dans une licence qu'il cherche (un doublon reste proposé).
@@ -816,12 +816,13 @@ function boostDone(catalog, his, covered = new Set()) {
 }
 // Envois acceptés sans retour en cours ni accepté dont aucune carte n'est plus chez lui : le joueur les a redemandés à la main sur le site.
 // Déduit à la volée de sa collection scannée, rien n'est écrit dans l'historique. Sans scan lisible, on ne déduit rien.
-function boostReturned(rows, his) {
+function boostReturned(rows, his, scanAt = 0) {
   const out = new Set();
   if (!his) return out;
   const live = new Set(['envoi', 'attente', 'acceptee']);
   for (const r of rows) {
     if (r.dir !== 'out' || r.status !== 'acceptee' || !r.cards.length) continue;
+    if (!(r.closed_at && scanAt > r.closed_at)) continue; // scan antérieur à l'acceptation (cache) : les cartes n'ont pas pu y arriver
     if (rows.some(b => b.dir === 'back' && b.parent === r.id && live.has(b.status))) continue;
     if (r.cards.every(id => !(his[id] > 0))) out.add(r.id);
   }
@@ -950,11 +951,11 @@ async function boostState(user, fresh = false) {
   // Scan de sa collection : les groupes qu'il a déjà complets ne sont ni envoyés ni comptés dans l'or espéré.
   let scan = { ok: false, private: false };
   try {
-    const { theirs } = await theirsOf(user, fresh ? 0 : BADGE_CACHE_MS);
+    const { theirs, at } = await theirsOf(user, fresh ? 0 : BADGE_CACHE_MS);
     if (theirs?.private) scan = { ok: false, private: true };
-    else if (theirs?.cards) scan = { ok: true, private: false, his: theirs.cards };
+    else if (theirs?.cards) scan = { ok: true, private: false, his: theirs.cards, at };
   } catch { /* collection illisible : plan sans filtre */ }
-  const returned = boostReturned(rows, scan.ok ? scan.his : null), bal = boostBalance(rows, returned);
+  const returned = boostReturned(rows, scan.ok ? scan.his : null, scan.at), bal = boostBalance(rows, returned);
   const liveMap = liveCatalog(), liveCards = [...liveMap.values()]; // les cartes retirées du jeu ne comptent ni pour le bonus ni pour le plan
   const cap = boostCap(), room = Math.max(0, cap - bal.atHim - bal.pendingOut);
   const slots = Math.max(0, BOOST_SLOTS - trades.filter(t => t.mine && t.status === 'attente').length);
