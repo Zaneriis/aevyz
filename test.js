@@ -567,7 +567,7 @@ const start = async () => {
   assert.deepStrictEqual((await (await post('/api/catalog/check', {})).json()).changes, [], 'aucun changement');
   game.rarityOverride = { c2: 5 };
   const chk = await (await post('/api/catalog/check', {})).json();
-  assert.deepStrictEqual(chk.changes, [{ id: 'c2', name: 'Deux', licence: 'Doom', from: 4, to: 5 }]);
+  assert.deepStrictEqual(chk.changes.map(({ at, ...c }) => c), [{ id: 'c2', name: 'Deux', licence: 'Doom', from: 4, to: 5 }]);
   { const ro = new (require('node:sqlite').DatabaseSync)(require('node:path').join(dir, 'aevyz.db'), { readOnly: true });
     assert.strictEqual(ro.prepare('SELECT rarity FROM cards WHERE id = ?').get('c2').rarity, 5); ro.close(); }
   assert.deepStrictEqual((await (await post('/api/catalog/check', {})).json()).changes, [], 'déjà à jour');

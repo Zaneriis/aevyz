@@ -204,7 +204,9 @@ function tx(fn) {
   db.exec('BEGIN');
   try { fn(); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
-async function syncCatalog() {
+let catalogSync = null; // une seule synchro à la fois : les appels simultanés partagent la même
+function syncCatalog() { return catalogSync ||= syncCatalogNow().finally(() => { catalogSync = null; }); }
+async function syncCatalogNow() {
   const { url } = await config();
   const [cards, artRows, alts] = await Promise.all([
     selectAll('cards', 'id,name,licence,rarity,active'),
@@ -218,22 +220,28 @@ async function syncCatalog() {
     name = excluded.name, licence = excluded.licence, rarity = excluded.rarity, art = COALESCE(excluded.art, art), active = excluded.active`);
   const flag = c => c.active == null ? null : c.active ? 1 : 0;
   const before = new Map(db.prepare('SELECT id, rarity FROM cards').all().map(c => [c.id, c.rarity])), changes = [];
-  const note = (id, name, licence, to) => { if (before.has(id) && before.get(id) != null && before.get(id) !== to) changes.push({ id, name, licence, from: before.get(id), to }); };
+  const note = (id, name, licence, to) => { if (to != null && before.has(id) && before.get(id) != null && before.get(id) !== to) changes.push({ id, name, licence, from: before.get(id), to }); };
   tx(() => {
     for (const c of cards) { note(c.id, c.name, c.licence, c.rarity); up.run(c.id, c.name, c.licence, c.rarity, art.get(c.id) ?? null, flag(c)); }
     for (const a of alts) {
       const b = byId.get(a.base_card);
-      if (b) up.run(a.id, `${b.name} (${a.style || 'Alternative'})`, b.licence, 6, pub(a.poster_path) ?? art.get(b.id) ?? null, flag(b));
+      if (b) { note(a.id, `${b.name} (${a.style || 'Alternative'})`, b.licence, 6); up.run(a.id, `${b.name} (${a.style || 'Alternative'})`, b.licence, 6, pub(a.poster_path) ?? art.get(b.id) ?? null, flag(b)); }
     }
   });
+  // Toute synchro (automatique ou manuelle) mémorise ses changements jusqu'à la prochaine vérification manuelle.
+  if (changes.length) {
+    kvSet('rarity_changes', [...(kvGet('rarity_changes') || []), ...changes.map(c => ({ ...c, at: Date.now() }))]);
+    log(`Raretés : ${changes.length} carte${changes.length > 1 ? 's' : ''} modifiée${changes.length > 1 ? 's' : ''}`);
+  }
   return changes;
 }
 // Vérification manuelle : relit le catalogue tout de suite et dit quelles cartes ont changé de rareté.
 async function checkRarities() {
   if (!kvGet('session')) return [409, { error: 'Compte Aevyz non connecté' }];
-  const changes = await syncCatalog();
+  await syncCatalog();
   catalogAt = Date.now();
-  log(changes.length ? `Raretés : ${changes.length} carte${changes.length > 1 ? 's' : ''} modifiée${changes.length > 1 ? 's' : ''}` : 'Raretés : aucun changement');
+  const changes = kvGet('rarity_changes') || [];
+  kvSet('rarity_changes', []);
   return [200, { changes, total: db.prepare('SELECT COUNT(*) AS n FROM cards').get().n }];
 }
 let historyChecked = false;
