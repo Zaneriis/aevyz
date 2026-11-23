@@ -31,7 +31,7 @@ const PLAYERS_CACHE_MS = 10 * 60000, TRADE_CACHE_MS = 60000, BADGE_CACHE_MS = 6 
 const RISK_ORDER = { low: 0, medium: 1, high: 2 };
 // Statistiques : classement relu toutes les 5 min ; collections et envies de quelques joueurs à chaque fois, à tour de rôle.
 const STATS_MS = 5 * 60000;
-const STATS_READS = process.env.STATS_READS ? +process.env.STATS_READS : 6; // ponytail: 6 × 12/h ≈ 200 joueurs en ~3 h ; test.js met 0
+const STATS_READS = process.env.STATS_READS ? +process.env.STATS_READS : 25; // 25 × 12/h = 300 lectures/h : 200 joueurs en moins d'une heure ; test.js met 0
 const STATS_SORTS = { uniq: 'pos_uniq', total: 'pos_total', opened: 'pos_opened', myth: 'pos_myth' };
 
 // Seuls ces boosters et les événements en cours sont autorisés : jamais la Boutique, qui consomme des pièces.
@@ -515,7 +515,8 @@ async function statsPass() {
     const catalog = catalogMap();
     await readCollection(me, catalog);
     // Les autres : collection et envies, les moins récemment lus d'abord, avec une pause irrégulière entre deux lectures.
-    const todo = db.prepare('SELECT id FROM players WHERE id != ? ORDER BY read_at IS NOT NULL, read_at LIMIT ?').all(me, STATS_READS);
+    // Priorité à ceux dont les chiffres du classement ont bougé depuis leur dernière lecture, puis aux moins récemment lus.
+    const todo = db.prepare('SELECT p.id FROM players p WHERE p.id != ? ORDER BY (p.read_at IS NULL OR EXISTS (SELECT 1 FROM snaps s WHERE s.player = p.id AND s.at > p.read_at)) DESC, p.read_at IS NOT NULL, p.read_at LIMIT ?').all(me, STATS_READS);
     for (const { id } of todo) {
       try {
         await readCollection(id, catalog);
