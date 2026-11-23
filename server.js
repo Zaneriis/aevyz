@@ -631,13 +631,13 @@ async function theirsOf(user, maxAge) {
 // Trouve des échanges à rareté égale ; le mode « dupes » ignore les envies des deux joueurs.
 // safe : écarte ses seuls exemplaires dans une licence qu'il cherche (un doublon reste proposé).
 // pending : écarte les cartes déjà engagées dans un échange en attente, des deux côtés, sans toucher aux envies du site.
-function tradeOffers({ owned, wishes, incoming, outgoing, theirs }, mode, link, { safe = false, pending = false } = {}) {
+function tradeOffers({ owned, wishes, incoming, outgoing, theirs }, mode, link, { safe = false, pending = false, noLeg = false, noMyth = false } = {}) {
   if (theirs?.private) return { private: true, name: theirs.username, link };
   const [onlyMyDupes, onlyTheirDupes, ignoreWishes] = TRADE_MODES[mode];
   const hisCards = theirs?.cards || {}, hisWishes = new Set(theirs?.wishes || []);
   const catalog = new Map(db.prepare('SELECT id, name, licence, rarity, art FROM cards').all().map(c => [c.id, c]));
   // Les variantes alternatives ne comptent pas dans la progression d'une licence.
-  const known = list => [...list].map(id => catalog.get(id)).filter(c => c && c.rarity != null);
+  const known = list => [...list].map(id => catalog.get(id)).filter(c => c && c.rarity != null && !(noLeg && c.rarity === 4) && !(noMyth && c.rarity >= 5));
   const perLicence = list => { const m = new Map(); for (const c of list) if (c.rarity < 6) m.set(c.licence, (m.get(c.licence) || 0) + 1); return m; };
   const licenceTotal = perLicence(catalog.values()), hisOwned = perLicence(known(Object.keys(hisCards))), hisLicenceWishes = perLicence(known(hisWishes));
   const giveSource = ignoreWishes ? owned.keys() : hisWishes;
@@ -670,8 +670,8 @@ function tradeCounts(data) {
   const counts = {};
   if (!data.theirs?.private) {
     for (const mode of Object.keys(TRADE_MODES)) {
-      for (const safe of [false, true]) for (const pending of [false, true])
-        counts[mode + (safe ? 'Safe' : '') + (pending ? 'Pending' : '')] = tradeOffers(data, mode, '', { safe, pending }).pack.give.length;
+      for (const safe of [false, true]) for (const pending of [false, true]) for (const noLeg of [false, true]) for (const noMyth of [false, true])
+        counts[mode + (safe ? 'Safe' : '') + (pending ? 'Pending' : '') + (noLeg ? 'NoLeg' : '') + (noMyth ? 'NoMyth' : '')] = tradeOffers(data, mode, '', { safe, pending, noLeg, noMyth }).pack.give.length;
     }
   }
   return { counts, read: data.read };
@@ -1392,7 +1392,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/trades') {
       const user = url.searchParams.get('user'), mode = url.searchParams.get('mode');
       if (!user || !Object.hasOwn(TRADE_MODES, mode)) return send(400, { error: 'Joueur ou option invalide' });
-      return send(200, tradeOffers(await tradeData(user), mode, `${ORIGIN}/profil?profil=${encodeURIComponent(user)}`, { safe: url.searchParams.get('safe') === '1', pending: url.searchParams.get('pending') === '1' }));
+      return send(200, tradeOffers(await tradeData(user), mode, `${ORIGIN}/profil?profil=${encodeURIComponent(user)}`, { safe: url.searchParams.get('safe') === '1', pending: url.searchParams.get('pending') === '1', noLeg: url.searchParams.get('noleg') === '1', noMyth: url.searchParams.get('nomyth') === '1' }));
     }
     if (req.method === 'GET' && url.pathname === '/api/trades/manual') {
       const user = url.searchParams.get('user');

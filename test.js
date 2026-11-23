@@ -388,12 +388,14 @@ const start = async () => {
   // Pastilles : toutes les combinaisons d'un coup, sans relire le jeu si la collection est en cache.
   const reads = game.tradeReads;
   const counted = await (await api('/api/trades/counts?user=lui')).json();
-  assert.deepStrictEqual(counted, { counts: {
-    classic: 4, classicSafe: 3, classicPending: 2, classicSafePending: 1,
+  // Les cartes du scénario sont toutes sous la rareté Légendaire : « sans Légendaires / Mythiques » ne change aucune taille.
+  const baseCounts = { classic: 4, classicSafe: 3, classicPending: 2, classicSafePending: 1,
     mine: 2, mineSafe: 2, minePending: 2, mineSafePending: 1,
     both: 2, bothSafe: 2, bothPending: 0, bothSafePending: 0,
-    dupes: 2, dupesSafe: 2, dupesPending: 0, dupesSafePending: 0,
-  }, read: false });
+    dupes: 2, dupesSafe: 2, dupesPending: 0, dupesSafePending: 0 };
+  const expectedCounts = {};
+  for (const [k, v] of Object.entries(baseCounts)) for (const suffix of ['', 'NoLeg', 'NoMyth', 'NoLegNoMyth']) expectedCounts[k + suffix] = v;
+  assert.deepStrictEqual(counted, { counts: expectedCounts, read: false });
   assert.strictEqual(game.tradeReads, reads);
   assert.deepStrictEqual((await (await api('/api/trades/counts?user=prive')).json()).counts, {}, 'collection privée : pas de pastille');
   assert.strictEqual((await api('/api/trades/counts')).status, 400);
