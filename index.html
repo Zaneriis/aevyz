@@ -763,6 +763,12 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
     </section>
   </div>
 
+  <details class="log" id="maint"><summary>Maintenance</summary>
+    <p class="xnote">Relit le catalogue d'Aevyz et repère les cartes dont la rareté a changé (les tris et les stats sont corrigés aussitôt).</p>
+    <button type="button" class="ghost" id="rarCheck">Vérifier les raretés des cartes</button>
+    <ul id="rarOut"></ul>
+  </details>
+
   <details class="log"><summary>Activité</summary><ul id="logs"></ul></details>
 </main>
 <dialog id="zoom" aria-label="Carte en grand"></dialog>
@@ -1019,6 +1025,18 @@ $('quietForm').onchange = async () => {
   try { await post('api/quiet', {on: $('quietOn').checked, from: $('quietFrom').value, to: $('quietTo').value}); }
   catch (e) { alert(e.message); }
   refresh();
+};
+$('rarCheck').onclick = async () => {
+  const b = $('rarCheck'), out = $('rarOut');
+  b.disabled = true; out.replaceChildren(el('li', {textContent: 'Vérification…'}));
+  try {
+    const {changes, total} = await post('api/catalog/check', {});
+    out.replaceChildren(...(changes.length
+      ? changes.map(c => el('li', {textContent: `${c.name || c.id}${c.licence ? ` (${c.licence})` : ''} : ${RARITIES[c.from]} → ${RARITIES[c.to]}`}))
+      : [el('li', {textContent: `Aucun changement (${total} cartes vérifiées).`})]));
+    if (changes.length) setTimeout(() => location.reload(), 3000); // les vues déjà chargées repartent d'un catalogue à jour
+  } catch (e) { out.replaceChildren(el('li', {textContent: e.message})); }
+  b.disabled = false;
 };
 $('quietForm').onsubmit = e => e.preventDefault();
 

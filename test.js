@@ -59,7 +59,7 @@ const fake = http.createServer((req, res) => {
       ...[['ac0', 'Alpha', 0], ['ac1', 'Alpha', 0], ['ar0', 'Alpha', 2], ['ar1', 'Alpha', 2], ['am5', 'Alpha', 5],
         ['bc0', 'Beta', 0], ['br0', 'Beta', 2], ['br1', 'Beta', 2], ['be3', 'Beta', 3], ['bc1', 'Gamma', 0], ['g2', 'Gamma', 0], ['g3', 'Gamma', 1]]
         .map(([id, licence, rarity]) => ({ id, name: id, licence, rarity })),
-    ]);
+    ].map(c => ({ ...c, rarity: game.rarityOverride?.[c.id] ?? c.rarity })));
     if (p === '/rest/v1/card_art') return page([{ card_id: 'c1', path: 'a/c1.webp' }]);
     if (p === '/rest/v1/alt_cards') return page([{ id: 'alt1', base_card: 'c3', style: 'Néon', poster_path: null }]);
     if (p === '/rest/v1/openings') return page(game.openings);
@@ -563,6 +563,16 @@ const start = async () => {
   assert.strictEqual((await missing('prive'))[0], 400, 'référence privée');
   assert.deepStrictEqual((await (await api('/api/stats/player?id=prive')).json()).rarity, [], 'collection privée : pas de raretés');
   assert.deepStrictEqual(luiStats.rarityTotals, [6, 1, 4, 1, 1, 2, 1], 'cartes en jeu par rareté, alternatives comprises, cartes retirées exclues');
+  // Vérification des raretés : une carte devient Mythique côté jeu, la base locale suit et le changement est rapporté.
+  assert.deepStrictEqual((await (await post('/api/catalog/check', {})).json()).changes, [], 'aucun changement');
+  game.rarityOverride = { c2: 5 };
+  const chk = await (await post('/api/catalog/check', {})).json();
+  assert.deepStrictEqual(chk.changes.map(({ at, ...c }) => c), [{ id: 'c2', name: 'Deux', licence: 'Doom', from: 4, to: 5 }]);
+  { const ro = new (require('node:sqlite').DatabaseSync)(require('node:path').join(dir, 'aevyz.db'), { readOnly: true });
+    assert.strictEqual(ro.prepare('SELECT rarity FROM cards WHERE id = ?').get('c2').rarity, 5); ro.close(); }
+  assert.deepStrictEqual((await (await post('/api/catalog/check', {})).json()).changes, [], 'déjà à jour');
+  game.rarityOverride = {};
+  await post('/api/catalog/check', {});
   assert.deepStrictEqual(await (await api('/api/stats/licences')).json(), { known: 1, licences: [
     { licence: 'Alpha', players: 1, cards: 4, size: 5 }, { licence: 'Gamma', players: 1, cards: 1, size: 3 }] }, 'licences enviées, sans mes envies');
   assert.strictEqual(st.find(x => x.id === 'lui').active_at, null, 'pas encore de mouvement');
