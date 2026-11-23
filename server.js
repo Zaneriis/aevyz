@@ -343,16 +343,20 @@ function timeline(q) {
 function history(q) {
   const { from, args } = openingFilter(q);
   const limit = Math.min(+q.get('limit') || 40, 200), offset = Math.max(+q.get('offset') || 0, 0);
-  // ponytail: « première fois » = première apparition dans la sauvegarde ; le site ne date pas les cartes possédées avant.
+  // ponytail: « première fois » = première apparition dans la sauvegarde, sauf si la collection compte plus d'exemplaires
+  // que les boosters sauvegardés n'en expliquent (carte possédée avant, échangée, achetée…) : le site ne date pas les acquisitions.
+  const rawOwned = db.prepare('SELECT cards FROM players WHERE id = ?').get(kvGet('session')?.user_id || '')?.cards;
+  const owned = rawOwned ? JSON.parse(rawOwned) : null;
   const cards = db.prepare(`SELECT oc.card_id AS id, c.name, c.licence, c.rarity, c.art,
       NOT EXISTS (SELECT 1 FROM opening_cards x JOIN openings ox ON ox.id = x.opening_id WHERE x.card_id = oc.card_id AND (
-        ox.created_at < o.created_at OR (ox.created_at = o.created_at AND ox.id < o.id) OR (ox.id = o.id AND x.pos < oc.pos))) AS first
+        ox.created_at < o.created_at OR (ox.created_at = o.created_at AND ox.id < o.id) OR (ox.id = o.id AND x.pos < oc.pos))) AS first,
+      (SELECT COUNT(*) FROM opening_cards x WHERE x.card_id = oc.card_id) AS seen
     FROM opening_cards oc JOIN openings o ON o.id = oc.opening_id
     LEFT JOIN cards c ON c.id = oc.card_id WHERE oc.opening_id = ? ORDER BY oc.pos`);
   return {
     total: db.prepare(`SELECT COUNT(*) AS n ${from}`).get(...args).n,
     openings: db.prepare(`SELECT o.id, o.genre, o.created_at AS at ${from} ORDER BY o.created_at DESC, o.id DESC LIMIT ? OFFSET ?`)
-      .all(...args, limit, offset).map(o => ({ id: o.id, at: o.at, pack: packName(o.genre), theme: packTheme(o.genre), cards: cards.all(o.id) })),
+      .all(...args, limit, offset).map(o => ({ id: o.id, at: o.at, pack: packName(o.genre), theme: packTheme(o.genre), cards: cards.all(o.id).map(({ seen, ...c }) => ({ ...c, first: !!c.first && !(owned && (owned[c.id] || 0) > seen) })) })),
     licences: db.prepare(`SELECT DISTINCT c.licence AS l FROM opening_cards oc JOIN cards c ON c.id = oc.card_id WHERE c.licence IS NOT NULL ORDER BY 1`).all().map(r => r.l),
   };
 }
