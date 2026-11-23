@@ -224,7 +224,7 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
 .xsent{color:#7be08f;font-weight:800;margin:0 0 14px}
 .tag.dupe{color:#7be08f;font-weight:800}
 /* Échange manuel */
-.xfilters:has(input[value=manual]:checked) .xsafe:has(#tradeSafe){display:none}
+.xfilters:has(input[value=manual]:checked) .xsafe:has(#tradeSafe), .xfilters:has(input[value=manual]:checked) .xsafe:has(#tradeNoLeg), .xfilters:has(input[value=manual]:checked) .xsafe:has(#tradeNoMyth){display:none}
 .mtrays{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:12px}
 .mtrays h4{margin:0 0 8px;color:var(--muted);font-size:.85rem}
 .mslots{display:flex;flex-wrap:wrap;gap:6px;min-height:64px;align-items:center}
@@ -528,6 +528,8 @@ details.log{margin-top:30px;color:var(--muted);font-size:.9rem}details.log summa
             </div>
             <label class="xsafe" title="Écarte ses seuls exemplaires dans une licence où ce joueur a des envies. Ses doublons restent proposés."><input type="checkbox" id="tradeSafe">Sans les licences recherchées (sauf doublons)</label>
             <label class="xsafe" title="Masque les cartes déjà engagées dans un échange en attente, envoyé ou reçu : de « Tu reçois » celles que tu recevrais, de « Tu donnes » celles que tu donnerais. Tes envies sur Aevyz ne changent pas."><input type="checkbox" id="tradePending">Sans les cartes déjà en attente</label>
+            <label class="xsafe" title="N'échange aucune carte Légendaire, ni en donnant ni en recevant."><input type="checkbox" id="tradeNoLeg">Sans les Légendaires</label>
+            <label class="xsafe" title="N'échange aucune carte Mythique (Mythiques Alternatives comprises), ni en donnant ni en recevant."><input type="checkbox" id="tradeNoMyth">Sans les Mythiques</label>
           </div>
         </div>
         <div id="tradeBody" aria-live="polite"><p class="xnote">Les modes classiques suivent vos envies. « Doublons sans envies » les ignore et ne garde que les cartes dont vous avez chacun au moins deux exemplaires. La pastille indique la taille de l'échange maximum. Rien ne part sans ton clic sur « Envoyer ».</p></div>
@@ -1177,7 +1179,7 @@ let playerRows = null, playersTotal = 0, tradeUser = null, tradeSeq = 0, scannin
 const TRADE_MAX = 20, TRADE_MESSAGE_MAX = 280;
 const tradeCounts = new Map(), badges = new Map(), visiblePlayers = new Set();
 const tradeMode = () => document.querySelector('input[name=tradeMode]:checked').value;
-const countKey = () => (tradeMode() === 'manual' ? 'classic' : tradeMode()) + ($('tradeSafe').checked ? 'Safe' : '') + ($('tradePending').checked ? 'Pending' : '');
+const countKey = () => (tradeMode() === 'manual' ? 'classic' : tradeMode()) + ($('tradeSafe').checked ? 'Safe' : '') + ($('tradePending').checked ? 'Pending' : '') + ($('tradeNoLeg').checked ? 'NoLeg' : '') + ($('tradeNoMyth').checked ? 'NoMyth' : '');
 const cardsOf = (d, side) => d.rarities.flatMap(r => r[side]);
 function riskTag(c) {
   if (!c.risk || c.risk.level === 'low') return [];
@@ -1503,7 +1505,7 @@ async function loadTrades() {
   if (tradeMode() !== 'manual' || man?.user !== tradeUser) $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: 'Chargement…'}));
   try {
     if (tradeMode() === 'manual') return await loadManual(seq);
-    const d = await getJson(`api/trades?user=${encodeURIComponent(tradeUser)}&mode=${tradeMode()}&safe=${$('tradeSafe').checked ? 1 : 0}&pending=${$('tradePending').checked ? 1 : 0}`);
+    const d = await getJson(`api/trades?user=${encodeURIComponent(tradeUser)}&mode=${tradeMode()}&safe=${$('tradeSafe').checked ? 1 : 0}&pending=${$('tradePending').checked ? 1 : 0}&noleg=${$('tradeNoLeg').checked ? 1 : 0}&nomyth=${$('tradeNoMyth').checked ? 1 : 0}`);
     if (seq === tradeSeq) renderTrades(d);
   } catch (e) { if (seq === tradeSeq) $('tradeBody').replaceChildren(el('p', {className: 'xnote', textContent: e.message})); }
 }
@@ -1592,7 +1594,7 @@ async function loadPlayers() {
   } catch (e) { $('playersInfo').textContent = e.message; }
 }
 $('playerSearch').oninput = renderPlayers;
-document.querySelectorAll('input[name=tradeMode], #tradeSafe, #tradePending').forEach(i => { i.onchange = () => { renderBadges(); loadTrades(); }; });
+document.querySelectorAll('input[name=tradeMode], #tradeSafe, #tradePending, #tradeNoLeg, #tradeNoMyth').forEach(i => { i.onchange = () => { renderBadges(); loadTrades(); }; });
 // ---- Échanges en attente : reçus et envoyés, avec mes exemplaires de chaque carte ----
 function pendingTag(c, giving, mine) {
   const n = c.owned;
@@ -2707,7 +2709,7 @@ function showView() {
 function saveFilters() {
   try {
     localStorage.setItem('aevyz-filters', JSON.stringify({
-      mode: tradeMode(), safe: $('tradeSafe').checked, pending: $('tradePending').checked,
+      mode: tradeMode(), safe: $('tradeSafe').checked, pending: $('tradePending').checked, noLeg: $('tradeNoLeg').checked, noMyth: $('tradeNoMyth').checked,
       rarities: [...$('rarities').querySelectorAll('input:checked')].map(i => i.value), licences: [...licSel],
       a: win.a, b: win.b === Infinity ? null : win.b, typed: $('typed').value,
     }));
@@ -2719,6 +2721,8 @@ function restoreFilters() {
     document.querySelectorAll('input[name=tradeMode]').forEach(i => { if (i.value === f.mode) i.checked = true; });
     $('tradeSafe').checked = !!f.safe;
     $('tradePending').checked = !!f.pending;
+    $('tradeNoLeg').checked = !!f.noLeg;
+    $('tradeNoMyth').checked = !!f.noMyth;
     $('rarities').querySelectorAll('input').forEach(i => { i.checked = (f.rarities || []).includes(i.value); });
     (f.licences || []).forEach(l => licSel.add(l));
     if (typeof f.a === 'number') win = {a: f.a, b: typeof f.b === 'number' ? f.b : Infinity};

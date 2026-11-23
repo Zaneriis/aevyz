@@ -54,3 +54,22 @@ test('duplicate-only suggestions ignore wishlists and exclude cards already owne
   assert.deepEqual(Array.from(result.pack.get, card => card.id), ['their-duplicate']);
   assert.equal(result.pack.give.length, result.pack.get.length);
 });
+
+test('legendary and mythic cards can be left out of a trade independently', () => {
+  const cards = [];
+  for (const [r, n] of [[3, 'epic'], [4, 'leg'], [5, 'myth'], [6, 'alt']]) {
+    cards.push({ id: `mine-${n}`, name: n, licence: 'A', rarity: r, art: null }, { id: `his-${n}`, name: n, licence: 'B', rarity: r, art: null });
+  }
+  const tradeOffers = loadTradeOffers(cards);
+  const data = {
+    owned: new Map(cards.filter(c => c.id.startsWith('mine-')).map(c => [c.id, 2])),
+    wishes: new Set(cards.filter(c => c.id.startsWith('his-')).map(c => c.id)),
+    incoming: new Set(), outgoing: new Set(),
+    theirs: { username: 'X', cards: Object.fromEntries(cards.filter(c => c.id.startsWith('his-')).map(c => [c.id, 2])), wishes: cards.filter(c => c.id.startsWith('mine-')).map(c => c.id) },
+  };
+  const rars = opts => Array.from(tradeOffers(data, 'classic', '/p', opts).rarities, r => r.rarity);
+  assert.deepEqual(rars({}), [6, 5, 4, 3]);
+  assert.deepEqual(rars({ noLeg: true }), [6, 5, 3]);
+  assert.deepEqual(rars({ noMyth: true }), [4, 3]);
+  assert.deepEqual(rars({ noLeg: true, noMyth: true }), [3]);
+});
