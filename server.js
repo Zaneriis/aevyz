@@ -217,13 +217,24 @@ async function syncCatalog() {
   const up = db.prepare(`INSERT INTO cards (id, name, licence, rarity, art, active) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET
     name = excluded.name, licence = excluded.licence, rarity = excluded.rarity, art = COALESCE(excluded.art, art), active = excluded.active`);
   const flag = c => c.active == null ? null : c.active ? 1 : 0;
+  const before = new Map(db.prepare('SELECT id, rarity FROM cards').all().map(c => [c.id, c.rarity])), changes = [];
+  const note = (id, name, licence, to) => { if (before.has(id) && before.get(id) != null && before.get(id) !== to) changes.push({ id, name, licence, from: before.get(id), to }); };
   tx(() => {
-    for (const c of cards) up.run(c.id, c.name, c.licence, c.rarity, art.get(c.id) ?? null, flag(c));
+    for (const c of cards) { note(c.id, c.name, c.licence, c.rarity); up.run(c.id, c.name, c.licence, c.rarity, art.get(c.id) ?? null, flag(c)); }
     for (const a of alts) {
       const b = byId.get(a.base_card);
       if (b) up.run(a.id, `${b.name} (${a.style || 'Alternative'})`, b.licence, 6, pub(a.poster_path) ?? art.get(b.id) ?? null, flag(b));
     }
   });
+  return changes;
+}
+// Vérification manuelle : relit le catalogue tout de suite et dit quelles cartes ont changé de rareté.
+async function checkRarities() {
+  if (!kvGet('session')) return [409, { error: 'Compte Aevyz non connecté' }];
+  const changes = await syncCatalog();
+  catalogAt = Date.now();
+  log(changes.length ? `Raretés : ${changes.length} carte${changes.length > 1 ? 's' : ''} modifiée${changes.length > 1 ? 's' : ''}` : 'Raretés : aucun changement');
+  return [200, { changes, total: db.prepare('SELECT COUNT(*) AS n FROM cards').get().n }];
 }
 let historyChecked = false;
 async function syncHistory() {
@@ -1443,6 +1454,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/market/edit') return send(...await editListings(body));
       if (url.pathname === '/api/routines') return send(...saveRoutines(body.routines));
       if (url.pathname === '/api/snipes') return send(...await saveSnipe(body));
+      if (url.pathname === '/api/catalog/check') return send(...await checkRarities());
       if (url.pathname === '/api/stats/refresh') return send(...await refreshPlayer(body));
       if (url.pathname === '/api/quiet' || url.pathname === '/api/market/quiet') { // deux pauses indépendantes : boosters et marché
         const q = { on: body.on === true, from: body.from, to: body.to }, mkt = url.pathname !== '/api/quiet';
