@@ -73,3 +73,19 @@ test('legendary and mythic cards can be left out of a trade independently', () =
   assert.deepEqual(rars({ noMyth: true }), [4, 3]);
   assert.deepEqual(rars({ noLeg: true, noMyth: true }), [3]);
 });
+
+test('rarity options do not change the risk evaluation used by « safe »', () => {
+  const cards = [
+    { id: 'mine-common', name: 'c', licence: 'L', rarity: 0, art: null },
+    { id: 'his-wish-leg', name: 'l', licence: 'L', rarity: 4, art: null },
+    { id: 'his-common', name: 'h', licence: 'L', rarity: 0, art: null },
+  ];
+  const tradeOffers = loadTradeOffers(cards);
+  const data = {
+    owned: new Map([['mine-common', 1]]), wishes: new Set(['his-common']), incoming: new Set(), outgoing: new Set(),
+    theirs: { username: 'X', cards: { 'his-common': 1 }, wishes: ['mine-common', 'his-wish-leg'] },
+  };
+  const ids = opts => Array.from(tradeOffers(data, 'classic', '/p', opts).pack.get, c => c.id);
+  assert.deepEqual(ids({ safe: true }), []);
+  assert.deepEqual(ids({ safe: true, noLeg: true }), []);
+});

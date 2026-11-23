@@ -637,14 +637,15 @@ function tradeOffers({ owned, wishes, incoming, outgoing, theirs }, mode, link, 
   const hisCards = theirs?.cards || {}, hisWishes = new Set(theirs?.wishes || []);
   const catalog = new Map(db.prepare('SELECT id, name, licence, rarity, art FROM cards').all().map(c => [c.id, c]));
   // Les variantes alternatives ne comptent pas dans la progression d'une licence.
-  const known = list => [...list].map(id => catalog.get(id)).filter(c => c && c.rarity != null && !(noLeg && c.rarity === 4) && !(noMyth && c.rarity >= 5));
+  const known = list => [...list].map(id => catalog.get(id)).filter(c => c && c.rarity != null);
+  const allowed = c => !(noLeg && c.rarity === 4) && !(noMyth && c.rarity >= 5); // filtre les cartes proposées, pas l'évaluation du risque
   const perLicence = list => { const m = new Map(); for (const c of list) if (c.rarity < 6) m.set(c.licence, (m.get(c.licence) || 0) + 1); return m; };
   const licenceTotal = perLicence(catalog.values()), hisOwned = perLicence(known(Object.keys(hisCards))), hisLicenceWishes = perLicence(known(hisWishes));
   const giveSource = ignoreWishes ? owned.keys() : hisWishes;
   const getSource = ignoreWishes ? Object.keys(hisCards) : wishes;
-  const give = known(giveSource).filter(c => !(ignoreWishes && hisCards[c.id] > 0) && !(pending && outgoing.has(c.id)) && (owned.get(c.id) || 0) >= (onlyMyDupes ? 2 : 1)).map(c => ({ ...c, copies: owned.get(c.id) }));
+  const give = known(giveSource).filter(allowed).filter(c => !(ignoreWishes && hisCards[c.id] > 0) && !(pending && outgoing.has(c.id)) && (owned.get(c.id) || 0) >= (onlyMyDupes ? 2 : 1)).map(c => ({ ...c, copies: owned.get(c.id) }));
   const giveIds = new Set(give.map(c => c.id));
-  const get = known(getSource).filter(c => !(ignoreWishes && owned.get(c.id) > 0) && !(pending && incoming.has(c.id)) && !giveIds.has(c.id) && hisCards[c.id] >= (onlyTheirDupes ? 2 : 1)).map(c => {
+  const get = known(getSource).filter(allowed).filter(c => !(ignoreWishes && owned.get(c.id) > 0) && !(pending && incoming.has(c.id)) && !giveIds.has(c.id) && hisCards[c.id] >= (onlyTheirDupes ? 2 : 1)).map(c => {
     const copies = hisCards[c.id], n = hisLicenceWishes.get(c.licence) || 0, have = hisOwned.get(c.licence) || 0, total = licenceTotal.get(c.licence) || 0;
     // ponytail: simple estimation ; un doublon se donne sans risque, sinon envies dans la licence puis progression à 50 %.
     const level = copies > 1 ? 'low' : n > 0 ? 'high' : have * 2 >= total ? 'medium' : 'low';
